@@ -1,0 +1,3 @@
+/home/sebastian/Desktop/distribuidos/proyecto_final/secuencial/CMakeFiles/MotionInterpolation.dir
+/home/sebastian/Desktop/distribuidos/proyecto_final/secuencial/CMakeFiles/edit_cache.dir
+/home/sebastian/Desktop/distribuidos/proyecto_final/secuencial/CMakeFiles/rebuild_cache.dir

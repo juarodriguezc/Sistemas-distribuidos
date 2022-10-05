@@ -1,0 +1,5 @@
+cmake_minimum_required(VERSION 2.8)
+PROJECT( MotionInterpolation )
+FIND_PACKAGE( OpenCV REQUIRED )
+ADD_EXECUTABLE( MotionInterpolation MotionInterpolation.cpp )
+TARGET_LINK_LIBRARIES( MotionInterpolation ${OpenCV_LIBS} )

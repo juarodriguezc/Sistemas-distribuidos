@@ -240,12 +240,14 @@ Mat1f getMotionImage(Mat1f lFrame1, Mat1f lFrame2, int width, int height)
 {
     // Declare image for the result
     Mat1f motionImage(height, width);
+    //Declare the variable to store the luminance differences
+    float fDiff = 0;
     // Substract the luminances
     for (int i = 0; i < height; i++)
     {
         for (int j = 0; j < width; j++)
         {
-            float fDiff = fabs((float)lFrame1.at<float>(i, j) - (float)lFrame2.at<float>(i, j));
+            fDiff = fabs((float)lFrame1.at<float>(i, j) - (float)lFrame2.at<float>(i, j));
             motionImage.at<float>(i, j) = (fDiff >= MOTION_PRES) ? fDiff : 0.0f;
         }
     }
@@ -357,6 +359,7 @@ Mat *interpolateFrames(Mat *frame1, Mat *frame2, int width, int height)
     OpticalVector *opticalFlow2 = getOpticalFlow2(frame1, frame2, width, height);
 
     // Create the new frame interpolating the optical Flow
+    /*
     for (int i = 0; i < height; i++)
     {
         for (int j = 0; j < width; j++)
@@ -367,15 +370,27 @@ Mat *interpolateFrames(Mat *frame1, Mat *frame2, int width, int height)
             interFrame[2].at<uchar>((int)(i + opticalFlow[i * width + j].y / 2), (int)(j + opticalFlow[i * width + j].x / 2)) = frame1[2].at<uchar>(i, j);
             */
 
-            
+            /*
 
-             interFrame[0].at<uchar>(i + opticalFlow2[i * width + j].v, j + opticalFlow2[i * width + j].v) = frame1[0].at<uchar>(i, j);
-             interFrame[1].at<uchar>(i + opticalFlow2[i * width + j].v, j + opticalFlow2[i * width + j].v) = frame1[1].at<uchar>(i, j);
-             interFrame[2].at<uchar>(i + opticalFlow2[i * width + j].v, j + opticalFlow2[i * width + j].v) = frame1[2].at<uchar>(i, j);
+             interFrame[0].at<uchar>(i + opticalFlow[i * width + j].v, j + opticalFlow[i * width + j].) = frame1[0].at<uchar>(i, j);
+             interFrame[1].at<uchar>(i + opticalFlow[i * width + j].v, j + opticalFlow[i * width + j].) = frame1[1].at<uchar>(i, j);
+             interFrame[2].at<uchar>(i + opticalFlow[i * width + j].v, j + opticalFlow[i * width + j].) = frame1[2].at<uchar>(i, j);
 
-             
+             */
             //if (opticalFlow[i * width + j]. > 0)
                 //std::cout << opticalFlow[i * width + j].x << ":" << opticalFlow[i * width + j].x << "  -  " << opticalFlow2[i * width + j].u << ":" << opticalFlow[i * width + j].v << std::endl;
+    /*    
+        }
+    }
+    */
+
+   for (int i = 0; i < height; i++)
+    {
+        for (int j = 0; j < width; j++)
+        {
+            interFrame[0].at<uchar>(i + opticalFlow2[i * width + j].v, j + opticalFlow2[i * width + j].u) = frame1[0].at<uchar>(i, j);
+            interFrame[1].at<uchar>(i + opticalFlow2[i * width + j].v, j + opticalFlow2[i * width + j].u) = frame1[1].at<uchar>(i, j);
+            interFrame[2].at<uchar>(i + opticalFlow2[i * width + j].v, j + opticalFlow2[i * width + j].u) = frame1[2].at<uchar>(i, j);
         }
     }
     return interFrame;

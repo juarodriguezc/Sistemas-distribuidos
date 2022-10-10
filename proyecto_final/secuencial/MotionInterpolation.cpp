@@ -13,6 +13,8 @@
 // Def PATCH_SIZE: 9 - SEARCH_SIZE: 7
 #define PATCH_SIZE 5
 #define SEARCH_SIZE 9
+#define FILTER_FLOW 2
+# define my_sizeof(type) ((char *)(&type+1)-(char*)(&type))
 
 using namespace cv;
 
@@ -33,9 +35,7 @@ OpticalVector *getOpticalFlow(Mat *, Mat *, int, int);
 
 Mat *interpolateFrames(Mat *, Mat *, int, int);
 
-Mat *blurFrame(Mat *, Mat *, int, int);
-
-
+void blurFrame(Mat *, Mat *, OpticalVector *, int, int);
 
 int main(int argc, char **argv)
 {
@@ -256,9 +256,50 @@ OpticalVector *getOpticalFlow(Mat *frame1, Mat *frame2, int width, int height)
     return optFlow;
 }
 
-Mat *blurFrame(Mat *frame, Mat *resFrame, int width, int height)
+void blurFrame(Mat *frame, Mat *resFrame, OpticalVector *opticalFlow, int width, int height)
 {
-
+    static float kernel[25] =
+        {
+            1 / 256.0, 4 / 256.0, 6 / 256.0, 4 / 256.0, 1 / 256.0,
+            4 / 256.0, 16 / 256.0, 24 / 256.0, 16 / 256.0, 4 / 256.0,
+            6 / 256.0, 24 / 256.0, 36 / 256.0, 24 / 256.0, 6 / 256.0,
+            4 / 256.0, 16 / 256.0, 24 / 256.0, 16 / 256.0, 4 / 256.0,
+            1 / 256.0, 4 / 256.0, 6 / 256.0, 4 / 256.0, 1 / 256.0};
+    static int kSize = (int)sqrt(my_sizeof(kernel)/my_sizeof(kernel[0]));
+    float conv[3] = {0.0, 0.0, 0.0};
+    for (int i = 0; i < height; i++)
+    {
+        for (int j = 0; j < width; j++)
+        {
+            if (abs(opticalFlow[i * width + j].x) > FILTER_FLOW || abs(opticalFlow[i * width + j].y) > FILTER_FLOW)
+            {
+                if (i > kSize && i < height - kSize && j > kSize && j < width - kSize)
+                {
+                    conv[0] = 0;
+                    conv[1] = 0;
+                    conv[2] = 0;
+                    for (int i1 = 0; i1 < kSize; i1++)
+                    {
+                        for (int j1 = 0; j1 < kSize; j1++)
+                        {
+                            conv[0] += kernel[i1 * 5 + j1] * frame[0].at<uchar>(i + i1 - kSize/2, j + j1 - kSize/2);
+                            conv[1] += kernel[i1 * 5 + j1] * frame[1].at<uchar>(i + i1 - kSize/2, j + j1 - kSize/2);
+                            conv[2] += kernel[i1 * 5 + j1] * frame[2].at<uchar>(i + i1 - kSize/2, j + j1 - kSize/2);
+                        }
+                    }
+                    // Check if the value is correct
+                    for (int x = 0; x < 3; x++)
+                    {
+                        if (conv[x] > 255)
+                            conv[x] = 255;
+                        if (conv[x] < 0)
+                            conv[x] = 0;
+                        resFrame[x].at<uchar>(i, j) = (int)conv[x];
+                    }
+                }
+            }
+        }
+    }
 }
 
 Mat *interpolateFrames(Mat *frame1, Mat *frame2, int width, int height)
@@ -280,6 +321,6 @@ Mat *interpolateFrames(Mat *frame1, Mat *frame2, int width, int height)
     }
     resFrame = new Mat[3]{interFrame[0].clone(), interFrame[1].clone(), interFrame[2].clone()};
     // Apply the blur filter over the image
-    blurFrame(interFrame, resFrame, width, height);
+    blurFrame(interFrame, resFrame, opticalFlow, width, height);
     return resFrame;
 }

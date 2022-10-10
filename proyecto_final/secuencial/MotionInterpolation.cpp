@@ -10,18 +10,16 @@
 #define MOTION_PRES 0.05f
 
 // Set the parameters for the optical flow
-#define PATCH_SIZE 9
-#define SEARCH_SIZE 7
+// Def PATCH_SIZE: 9 - SEARCH_SIZE: 7
+#define PATCH_SIZE 5
+#define SEARCH_SIZE 9
 
 using namespace cv;
 
 struct OpticalVector
 {
-    float x;
-    float y;
-
-    float u;
-    float v;
+    int x;
+    int y;
 };
 
 // Prototype for the luminance
@@ -35,95 +33,9 @@ OpticalVector *getOpticalFlow(Mat *, Mat *, int, int);
 
 Mat *interpolateFrames(Mat *, Mat *, int, int);
 
-OpticalVector *getOpticalFlow2(Mat *frame1, Mat *frame2, int width, int height)
-{
-    Mat1f lFrame1 = getLuminance(frame1[0], frame1[1], frame1[2], width, height);
-    Mat1f lFrame2 = getLuminance(frame2[0], frame2[1], frame2[2], width, height);
+Mat *blurFrame(Mat *, Mat *, int, int);
 
-    // Get the motionFrame of the frames
-    Mat1f motionFrame = getMotionImage(lFrame1, lFrame2, width, height);
 
-    // Create array of OpticalVector for the optical flow
-    struct OpticalVector *optFlow = (OpticalVector *)malloc(width * height * sizeof(struct OpticalVector));
-    for (int i = 0; i < height; i++)
-    {
-        for (int j = 0; j < width; j++)
-        {
-            // Initialize the vector
-            optFlow[i * width + j].u = 0.0f;
-            optFlow[i * width + j].v = 0.0f;
-            // Initialize the variables
-            float fPatchDifferenceMax = INFINITY;
-            float fPatchDifferenceX = 0.0f;
-            float fPatchDifferenceY = 0.0f;
-
-            /*
-                Search over a rectangular area for a patch of the image
-            */
-
-            // Sx and Sy indicates the area of serch
-            for (int sy = 0; sy < SEARCH_SIZE; sy++)
-            {
-                for (int sx = 0; sx < SEARCH_SIZE; sx++)
-                {
-                    // vectors that iterate over the search square
-                    int searchVectorX = j + (sx - SEARCH_SIZE / 2);
-                    int searchVectorY = i + (sy - SEARCH_SIZE / 2);
-
-                    // Variable to store the difference of the patch
-                    float fAccumDif = 0.0f;
-
-                    // Iterate over the patch with px and py
-                    for (int py = 0; py < PATCH_SIZE; py++)
-                    {
-                        for (int px = 0; px < PATCH_SIZE; px++)
-                        {
-                            // Iterate over the patch
-                            int patchPixelX = searchVectorX + (px - PATCH_SIZE / 2);
-
-                            int PatchPixelY = searchVectorY + (py - PATCH_SIZE / 2);
-
-                            // Iterate over the patch of the original pixel
-                            int basePixelX = j + (px - PATCH_SIZE / 2);
-                            int basePixelY = i + (py - PATCH_SIZE / 2);
-
-                            // Get adjacent values for each patch checking that is inside the image
-                            float fPatchPixel = 0.0f;
-                            if (patchPixelX >= 0 && patchPixelX < width && PatchPixelY >= 0 && PatchPixelY < height)
-                                fPatchPixel = lFrame2.at<float>(PatchPixelY, patchPixelX);
-
-                            float fBasePixel = 0.0f;
-                            if (basePixelX >= 0 && basePixelX < width && basePixelY >= 0 && basePixelY < height)
-                                fBasePixel = lFrame1.at<float>(basePixelY, basePixelX);
-
-                            // Accumulate difference
-                            fAccumDif += fabs(fPatchPixel - fBasePixel);
-                        }
-                    }
-
-                    /*
-                    Record the vector offset for the least different search patch
-                    */
-                    if (fAccumDif <= fPatchDifferenceMax)
-                    {
-                        fPatchDifferenceMax = fAccumDif;
-                        optFlow[i * width + j].u = (float)(searchVectorX - j);
-                        optFlow[i * width + j].v = (float)(searchVectorY - i);
-                    }
-                }
-            }
-        }
-    }
-    for (int i = 0; i < height; i++)
-    {
-        for (int j = 0; j < width; j++)
-        {
-            optFlow[i].u *= motionFrame.at<float>(i, j) > 0 ? 1.0f : 0.0f;
-            optFlow[i].v *= motionFrame.at<float>(i, j) > 0 ? 1.0f : 0.0f;
-        }
-    }
-    return optFlow;
-}
 
 int main(int argc, char **argv)
 {
@@ -140,7 +52,7 @@ int main(int argc, char **argv)
     Size frameSize;
     int width, height;
     // Declare the vector to merge the channels
-    std::vector<Mat> mChannels;
+    std::vector<Mat> interFrame;
 
     // Check if the number of arguments is correct
     if (argc < R_ARGS + 1)
@@ -196,9 +108,9 @@ int main(int argc, char **argv)
     printf("Tiempo de ejecución: %ld.%06ld s \n", (long int)tval_result.tv_sec, (long int)tval_result.tv_usec);
 
     // Save channels into the vector
-    mChannels = {imageInter[0], imageInter[1], imageInter[2]};
+    interFrame = {imageInter[0], imageInter[1], imageInter[2]};
     // Merge the channels
-    merge(mChannels, saveImage);
+    merge(interFrame, saveImage);
 
     // writing the image to a defined location as JPEG
     if (imwrite(savePath, saveImage) == false)
@@ -207,9 +119,6 @@ int main(int argc, char **argv)
         return -1;
     }
 
-    // imshow("Blue Channel", saveImage);
-
-    // waitKey(0);
     return 0;
 }
 
@@ -240,7 +149,7 @@ Mat1f getMotionImage(Mat1f lFrame1, Mat1f lFrame2, int width, int height)
 {
     // Declare image for the result
     Mat1f motionImage(height, width);
-    //Declare the variable to store the luminance differences
+    // Declare the variable to store the luminance differences
     float fDiff = 0;
     // Substract the luminances
     for (int i = 0; i < height; i++)
@@ -277,121 +186,100 @@ OpticalVector *getOpticalFlow(Mat *frame1, Mat *frame2, int width, int height)
         for (int j = 0; j < width; j++)
         {
             // Initialize the vector
-            optFlow[i * width + j].x = 0.0f;
-            optFlow[i * width + j].y = 0.0f;
-            // Initialize the variables
-            fPatchDifferenceMax = INFINITY;
-            fPatchDifferenceX = 0.0f;
-            fPatchDifferenceY = 0.0f;
+            optFlow[i * width + j].x = 0;
+            optFlow[i * width + j].y = 0;
 
-            // Search over a rectangular area for a patch of the image
-            //  Sx and Sy indicates the area of search
-            for (int sy = 0; sy < SEARCH_SIZE; sy++)
+            // std::cout<<(int)motionFrame.at<float>(i, j)<<std::endl;
+
+            if ((int)motionFrame.at<float>(i, j) > 0)
             {
-                for (int sx = 0; sx < SEARCH_SIZE; sx++)
+                // Initialize the variables
+                fPatchDifferenceMax = INFINITY;
+                fPatchDifferenceX = 0.0f;
+                fPatchDifferenceY = 0.0f;
+
+                // Search over a rectangular area for a patch of the image
+                //  Sx and Sy indicates the area of search
+                for (int sy = 0; sy < SEARCH_SIZE; sy++)
                 {
-                    // vectors that iterate over the search square
-                    searchVectorX = j + (sx - SEARCH_SIZE / 2);
-                    searchVectorY = i + (sy - SEARCH_SIZE / 2);
-
-                    // Variable to store the difference of the patch
-                    fAccumDif = 0.0f;
-
-                    // Iterate over the patch with px and py
-                    for (int py = 0; py < PATCH_SIZE; py++)
+                    for (int sx = 0; sx < SEARCH_SIZE; sx++)
                     {
-                        for (int px = 0; px < PATCH_SIZE; px++)
+                        // vectors that iterate over the search square
+                        searchVectorX = j + (sx - SEARCH_SIZE / 2);
+                        searchVectorY = i + (sy - SEARCH_SIZE / 2);
+
+                        // Variable to store the difference of the patch
+                        fAccumDif = 0.0f;
+
+                        // Iterate over the patch with px and py
+                        for (int py = 0; py < PATCH_SIZE; py++)
                         {
-                            // Iterate over the patch
-                            patchPixelX = searchVectorX + (px - PATCH_SIZE / 2);
-                            PatchPixelY = searchVectorY + (py - PATCH_SIZE / 2);
+                            for (int px = 0; px < PATCH_SIZE; px++)
+                            {
+                                // Iterate over the patch
+                                patchPixelX = searchVectorX + (px - PATCH_SIZE / 2);
+                                PatchPixelY = searchVectorY + (py - PATCH_SIZE / 2);
 
-                            // Iterate over the patch of the original pixel
-                            basePixelX = j + (px - PATCH_SIZE / 2);
-                            basePixelY = i + (py - PATCH_SIZE / 2);
+                                // Iterate over the patch of the original pixel
+                                basePixelX = j + (px - PATCH_SIZE / 2);
+                                basePixelY = i + (py - PATCH_SIZE / 2);
 
-                            // Get adjacent values for each patch checking that is inside the image
-                            fPatchPixel = 0.0f;
-                            if (patchPixelX >= 0 && patchPixelX < width && PatchPixelY >= 0 && PatchPixelY < height)
-                                fPatchPixel = lFrame2.at<float>(PatchPixelY, patchPixelX);
+                                // Get adjacent values for each patch checking that is inside the image
+                                fPatchPixel = 0.0f;
+                                if (patchPixelX >= 0 && patchPixelX < width && PatchPixelY >= 0 && PatchPixelY < height)
+                                    fPatchPixel = lFrame2.at<float>(PatchPixelY, patchPixelX);
 
-                            fBasePixel = 0.0f;
-                            if (basePixelX >= 0 && basePixelX < width && basePixelY >= 0 && basePixelY < height)
-                                fBasePixel = lFrame1.at<float>(basePixelY, basePixelX);
+                                fBasePixel = 0.0f;
+                                if (basePixelX >= 0 && basePixelX < width && basePixelY >= 0 && basePixelY < height)
+                                    fBasePixel = lFrame1.at<float>(basePixelY, basePixelX);
 
-                            // Accumulate difference
-                            fAccumDif += fabs(fPatchPixel - fBasePixel);
+                                // Accumulate difference
+                                fAccumDif += fabs(fPatchPixel - fBasePixel);
+                            }
                         }
-                    }
 
-                    /*
-                    Record the vector offset for the least different search patch
-                    */
-                    if (fAccumDif <= fPatchDifferenceMax)
-                    {
-                        fPatchDifferenceMax = fAccumDif;
-                        optFlow[i * width + j].x = (float)(searchVectorX - j);
-                        optFlow[i * width + j].y = (float)(searchVectorY - i);
+                        /*
+                        Record the vector offset for the least different search patch
+                        */
+                        if (fAccumDif <= fPatchDifferenceMax)
+                        {
+                            fPatchDifferenceMax = fAccumDif;
+                            optFlow[i * width + j].x = searchVectorX - j;
+                            optFlow[i * width + j].y = searchVectorY - i;
+                        }
                     }
                 }
             }
         }
     }
 
-    // Check if the OpticalFrame detected has motion
-    for (int i = 0; i < height; i++)
-    {
-        for (int j = 0; j < width; j++)
-        {
-            optFlow[i].x *= motionFrame.at<float>(i, j) > 0 ? 1.0f : 0.0f;
-            optFlow[i].y *= motionFrame.at<float>(i, j) > 0 ? 1.0f : 0.0f;
-        }
-    }
     return optFlow;
+}
+
+Mat *blurFrame(Mat *frame, Mat *resFrame, int width, int height)
+{
+
 }
 
 Mat *interpolateFrames(Mat *frame1, Mat *frame2, int width, int height)
 {
     // Declare the Matrix for the intermediate frame
-    Mat *interFrame = new Mat[3]{frame1[0], frame1[1], frame1[2]};
+    Mat *interFrame = new Mat[3]{frame1[0].clone(), frame1[1].clone(), frame1[2].clone()};
+    Mat *resFrame;
     // Declare the array for the Optical Flow
     OpticalVector *opticalFlow = getOpticalFlow(frame1, frame2, width, height);
-    OpticalVector *opticalFlow2 = getOpticalFlow2(frame1, frame2, width, height);
-
     // Create the new frame interpolating the optical Flow
-    /*
     for (int i = 0; i < height; i++)
     {
         for (int j = 0; j < width; j++)
         {
-            /*
-            interFrame[0].at<uchar>((int)(i + opticalFlow[i * width + j].y / 2), (int)(j + opticalFlow[i * width + j].x / 2)) = frame1[0].at<uchar>(i, j);
-            interFrame[1].at<uchar>((int)(i + opticalFlow[i * width + j].y / 2), (int)(j + opticalFlow[i * width + j].x / 2)) = frame1[1].at<uchar>(i, j);
-            interFrame[2].at<uchar>((int)(i + opticalFlow[i * width + j].y / 2), (int)(j + opticalFlow[i * width + j].x / 2)) = frame1[2].at<uchar>(i, j);
-            */
-
-            /*
-
-             interFrame[0].at<uchar>(i + opticalFlow[i * width + j].v, j + opticalFlow[i * width + j].) = frame1[0].at<uchar>(i, j);
-             interFrame[1].at<uchar>(i + opticalFlow[i * width + j].v, j + opticalFlow[i * width + j].) = frame1[1].at<uchar>(i, j);
-             interFrame[2].at<uchar>(i + opticalFlow[i * width + j].v, j + opticalFlow[i * width + j].) = frame1[2].at<uchar>(i, j);
-
-             */
-            //if (opticalFlow[i * width + j]. > 0)
-                //std::cout << opticalFlow[i * width + j].x << ":" << opticalFlow[i * width + j].x << "  -  " << opticalFlow2[i * width + j].u << ":" << opticalFlow[i * width + j].v << std::endl;
-    /*    
+            interFrame[0].at<uchar>(i + (int)(opticalFlow[i * width + j].y / 2), j + (int)(opticalFlow[i * width + j].x) / 2) = frame1[0].at<uchar>(i, j);
+            interFrame[1].at<uchar>(i + (int)(opticalFlow[i * width + j].y / 2), j + (int)(opticalFlow[i * width + j].x) / 2) = frame1[1].at<uchar>(i, j);
+            interFrame[2].at<uchar>(i + (int)(opticalFlow[i * width + j].y / 2), j + (int)(opticalFlow[i * width + j].x) / 2) = frame1[2].at<uchar>(i, j);
         }
     }
-    */
-
-   for (int i = 0; i < height; i++)
-    {
-        for (int j = 0; j < width; j++)
-        {
-            interFrame[0].at<uchar>(i + opticalFlow2[i * width + j].v, j + opticalFlow2[i * width + j].u) = frame1[0].at<uchar>(i, j);
-            interFrame[1].at<uchar>(i + opticalFlow2[i * width + j].v, j + opticalFlow2[i * width + j].u) = frame1[1].at<uchar>(i, j);
-            interFrame[2].at<uchar>(i + opticalFlow2[i * width + j].v, j + opticalFlow2[i * width + j].u) = frame1[2].at<uchar>(i, j);
-        }
-    }
-    return interFrame;
+    resFrame = new Mat[3]{interFrame[0].clone(), interFrame[1].clone(), interFrame[2].clone()};
+    // Apply the blur filter over the image
+    blurFrame(interFrame, resFrame, width, height);
+    return resFrame;
 }

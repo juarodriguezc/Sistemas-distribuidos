@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <iostream>
 #include <sys/time.h>
+#include <omp.h>
 
 #include <opencv2/opencv.hpp>
 
@@ -25,19 +26,19 @@ struct OpticalVector
 };
 
 // Prototype for the luminance
-Mat1f getLuminance(Mat, Mat, Mat, int, int);
+Mat1f getLuminanceP(Mat, Mat, Mat, int, int, int = 0);
 
 // Prototype for the motionImage
 Mat1f getMotionImage(Mat1f, Mat1f, int, int);
 
 // Prototype for the optical flow
-OpticalVector *getOpticalFlow(Mat *, Mat *, int, int);
+OpticalVector *getOpticalFlowP(Mat *, Mat *, int, int, int = 0);
 
-Mat *interpolateFrames(Mat *, Mat *, int, int);
+Mat *interpolateFramesP(Mat *, Mat *, int, int, int = 0);
 
 VideoCapture interpolateVideo(VideoCapture, timeval);
 
-void blurFrame(Mat *, Mat *, OpticalVector *, int, int);
+void blurFrameP(Mat *, Mat *, OpticalVector *, int, int, int = 0);
 
 int main(int argc, char **argv)
 {
@@ -79,9 +80,8 @@ int main(int argc, char **argv)
         return -1;
     }
 
-    //interpolateVideo(loadVideo, tval_result);
+    // interpolateVideo(loadVideo, tval_result);
 
-    
     // Load the first frame
     loadIFrame1 = imread(loadPathFr1, IMREAD_UNCHANGED);
     if (!loadIFrame1.data)
@@ -99,8 +99,6 @@ int main(int argc, char **argv)
         return -1;
     }
 
-
-
     // Split first frame
     split(loadIFrame1, imageChF1);
     // Split second frame
@@ -113,11 +111,7 @@ int main(int argc, char **argv)
 
     // Interpolate the frames
 
-    imageInter = interpolateFrames(imageChF1, imageChF2, frameSize.width, frameSize.height);
-
-
-
-    
+    imageInter = interpolateFramesP(imageChF1, imageChF2, frameSize.width, frameSize.height);
 
     // Calcular los tiempos en tval_result
     //  Get end time
@@ -128,7 +122,6 @@ int main(int argc, char **argv)
     printf("------------------------------------------------------------------------------\n");
     printf("Tiempo de ejecución: %ld.%06ld s \n", (long int)tval_result.tv_sec, (long int)tval_result.tv_usec);
 
-    
     // Save channels into the vector
     interFrame = {imageInter[0], imageInter[1], imageInter[2]};
     // Merge the channels
@@ -140,30 +133,48 @@ int main(int argc, char **argv)
         std::cout << "Saving the image, FAILED" << std::endl;
         return -1;
     }
-    
 
     return 0;
 }
 
 // Function to get the luminance
-Mat1f getLuminance(Mat B, Mat G, Mat R, int width, int height)
+Mat1f getLuminanceP(Mat B, Mat G, Mat R, int width, int height, int nThreads)
 {
     // Declare the matrix to store the luminance
     Mat1f lMatrix(height, width);
-    // Variables to store the results
-    float fB = 0.0f;
-    float fG = 0.0f;
-    float fR = 0.0f;
-    for (int i = 0; i < height; i++)
+    //Check the value of the threads
+    if (nThreads <= 0)
+        nThreads = omp_get_num_procs();
+    
+    #pragma omp parallel num_threads(nThreads)
     {
-        for (int j = 0; j < width; j++)
+        // Get the id of the thread
+        int thread_id = omp_get_thread_num();
+        // Get start and end pos
+        int startPos = (thread_id < (width * height) % nThreads) ? ((width * height) / nThreads) * thread_id + thread_id : ((width * height) / nThreads) * thread_id + (width * height) % nThreads;
+        int endPos = (thread_id < (width * height) % nThreads) ? startPos + ((width * height) / nThreads) : startPos + ((width * height) / nThreads) - 1;
+        int i = (startPos / width), j = (startPos % width);
+        
+        // Variables to store the results
+        float fB = 0.0f;
+        float fG = 0.0f;
+        float fR = 0.0f;
+
+        for (startPos; startPos <= endPos; startPos++)
         {
             fB = (float)B.at<uchar>(i, j);
             fG = (float)G.at<uchar>(i, j);
             fR = (float)R.at<uchar>(i, j);
             lMatrix.at<float>(i, j) = 0.2987f * fR + 0.5870f * fG + 0.1140f * fB;
+            j += 1;
+            if (j == width)
+            {
+                i += 1;
+                j = 0;
+            }
         }
     }
+    
     return lMatrix;
 }
 
@@ -186,34 +197,44 @@ Mat1f getMotionImage(Mat1f lFrame1, Mat1f lFrame2, int width, int height)
     return motionImage;
 }
 
-OpticalVector *getOpticalFlow(Mat *frame1, Mat *frame2, int width, int height)
+OpticalVector *getOpticalFlowP(Mat *frame1, Mat *frame2, int width, int height, int nThreads)
 {
+    // Change the value of nThreads if is zero
+    if (nThreads <= 0)
+        nThreads = omp_get_num_procs();
+
     // Get the luminance of the two frames
-    Mat1f lFrame1 = getLuminance(frame1[0], frame1[1], frame1[2], width, height);
-    Mat1f lFrame2 = getLuminance(frame2[0], frame2[1], frame2[2], width, height);
+    Mat1f lFrame1 = getLuminanceP(frame1[0], frame1[1], frame1[2], width, height, nThreads);
+    Mat1f lFrame2 = getLuminanceP(frame2[0], frame2[1], frame2[2], width, height, nThreads);
     // Get the motionFrame of the frames
     Mat1f motionFrame = getMotionImage(lFrame1, lFrame2, width, height);
     // Create array of OpticalVector for the optical flow
     struct OpticalVector *optFlow = (OpticalVector *)malloc(width * height * sizeof(struct OpticalVector));
-    // Declare the variables for the optical flow
-    float fPatchDifferenceMax = INFINITY;
-    float fPatchDifferenceX = 0.0f, fPatchDifferenceY = 0.0f;
-    int searchVectorX = 0, searchVectorY = 0;
-    float fAccumDif = 0.0f;
-    int patchPixelX = 0, PatchPixelY = 0;
-    int basePixelX = 0, basePixelY = 0;
-    float fPatchPixel = 0.0f, fBasePixel = 0.0f;
-    // Iterate over each pixel of the image
-    for (int i = 0; i < height; i++)
+
+    #pragma omp parallel num_threads(nThreads)
     {
-        for (int j = 0; j < width; j++)
+        // Get the id of the thread
+        int thread_id = omp_get_thread_num();
+        // Get start and end pos
+        int startPos = (thread_id < (width * height) % nThreads) ? ((width * height) / nThreads) * thread_id + thread_id : ((width * height) / nThreads) * thread_id + (width * height) % nThreads;
+        int endPos = (thread_id < (width * height) % nThreads) ? startPos + ((width * height) / nThreads) : startPos + ((width * height) / nThreads) - 1;
+
+        int i = (startPos / width), j = (startPos % width);
+        // Declare the variables for the optical flow
+        float fPatchDifferenceMax = INFINITY;
+        float fPatchDifferenceX = 0.0f, fPatchDifferenceY = 0.0f;
+        int searchVectorX = 0, searchVectorY = 0;
+        float fAccumDif = 0.0f;
+        int patchPixelX = 0, PatchPixelY = 0;
+        int basePixelX = 0, basePixelY = 0;
+        float fPatchPixel = 0.0f, fBasePixel = 0.0f;
+
+        // Iterate over each pixel of the image
+        for (startPos; startPos <= endPos; startPos++)
         {
             // Initialize the vector
             optFlow[i * width + j].x = 0;
             optFlow[i * width + j].y = 0;
-
-            // std::cout<<(int)motionFrame.at<float>(i, j)<<std::endl;
-
             if ((int)motionFrame.at<float>(i, j) > 0)
             {
                 // Initialize the variables
@@ -273,13 +294,19 @@ OpticalVector *getOpticalFlow(Mat *frame1, Mat *frame2, int width, int height)
                     }
                 }
             }
+            j += 1;
+            if (j == width)
+            {
+                i += 1;
+                j = 0;
+            }
         }
     }
 
     return optFlow;
 }
 
-void blurFrame(Mat *frame, Mat *resFrame, OpticalVector *opticalFlow, int width, int height)
+void blurFrameP(Mat *frame, Mat *resFrame, OpticalVector *opticalFlow, int width, int height, int nThreads)
 {
     static float kernel[25] =
         {
@@ -289,10 +316,24 @@ void blurFrame(Mat *frame, Mat *resFrame, OpticalVector *opticalFlow, int width,
             4 / 256.0, 16 / 256.0, 24 / 256.0, 16 / 256.0, 4 / 256.0,
             1 / 256.0, 4 / 256.0, 6 / 256.0, 4 / 256.0, 1 / 256.0};
     static int kSize = (int)sqrt(my_sizeof(kernel) / my_sizeof(kernel[0]));
-    float conv[3] = {0.0, 0.0, 0.0};
-    for (int i = 0; i < height; i++)
+
+    // Change the value of nThreads if is zero
+    if (nThreads <= 0)
+        nThreads = omp_get_num_procs();
+    
+    //Parallel the filter
+    #pragma omp parallel num_threads(nThreads)
     {
-        for (int j = 0; j < width; j++)
+        // Get the id of the thread
+        int thread_id = omp_get_thread_num();
+        // Get start and end pos
+        int startPos = (thread_id < (width * height) % nThreads) ? ((width * height) / nThreads) * thread_id + thread_id : ((width * height) / nThreads) * thread_id + (width * height) % nThreads;
+        int endPos = (thread_id < (width * height) % nThreads) ? startPos + ((width * height) / nThreads) : startPos + ((width * height) / nThreads) - 1;
+        int i = (startPos / width), j = (startPos % width);
+
+        //Float to store the convolution value
+        float conv[3] = {0.0, 0.0, 0.0};
+        for (startPos; startPos <= endPos; startPos++)
         {
             if (abs(opticalFlow[i * width + j].x) > FILTER_FLOW || abs(opticalFlow[i * width + j].y) > FILTER_FLOW)
             {
@@ -321,17 +362,26 @@ void blurFrame(Mat *frame, Mat *resFrame, OpticalVector *opticalFlow, int width,
                     }
                 }
             }
+            j += 1;
+            if (j == width)
+            {
+                i += 1;
+                j = 0;
+            }
         }
     }
 }
 
-Mat *interpolateFrames(Mat *frame1, Mat *frame2, int width, int height)
+Mat *interpolateFramesP(Mat *frame1, Mat *frame2, int width, int height, int nThreads)
 {
     // Declare the Matrix for the intermediate frame
     Mat *interFrame = new Mat[3]{frame1[0].clone(), frame1[1].clone(), frame1[2].clone()};
     Mat *resFrame;
+    // Change the value of nThreads if is zero
+    if (nThreads <= 0)
+        nThreads = omp_get_num_procs();
     // Declare the array for the Optical Flow
-    OpticalVector *opticalFlow = getOpticalFlow(frame1, frame2, width, height);
+    OpticalVector *opticalFlow = getOpticalFlowP(frame1, frame2, width, height, nThreads);
     // Create the new frame interpolating the optical Flow
     for (int i = 0; i < height; i++)
     {
@@ -344,7 +394,7 @@ Mat *interpolateFrames(Mat *frame1, Mat *frame2, int width, int height)
     }
     resFrame = new Mat[3]{interFrame[0].clone(), interFrame[1].clone(), interFrame[2].clone()};
     // Apply the blur filter over the image
-    blurFrame(interFrame, resFrame, opticalFlow, width, height);
+    blurFrameP(interFrame, resFrame, opticalFlow, width, height, nThreads);
     return resFrame;
 }
 

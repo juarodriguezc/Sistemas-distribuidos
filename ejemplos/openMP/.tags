@@ -1,0 +1,36 @@
+!_TAG_FILE_FORMAT	2	/extended format; --format=1 will not append ;" to lines/
+!_TAG_FILE_SORTED	1	/0=unsorted, 1=sorted, 2=foldcase/
+!_TAG_PROGRAM_AUTHOR	Darren Hiebert	/dhiebert@users.sourceforge.net/
+!_TAG_PROGRAM_NAME	Exuberant Ctags	//
+!_TAG_PROGRAM_URL	http://ctags.sourceforge.net	/official site/
+!_TAG_PROGRAM_VERSION	5.9~svn20110310	//
+DYNAMIC_CHUNK	omp_schedule.c	8;"	d	file:
+ITERATIONS	pi_omp.c	6;"	d	file:
+NT	sections_firstprivate.c	3;"	d	file:
+NUM_LOOPS	omp_schedule.c	9;"	d	file:
+NUM_THREADS	omp_schedule.c	6;"	d	file:
+SIZE	nowait.c	11;"	d	file:
+SIZE	nowait_fixed.c	9;"	d	file:
+SLEEP_EVERY_N	omp_schedule.c	10;"	d	file:
+STATIC_CHUNK	omp_schedule.c	7;"	d	file:
+THREADS	pi_omp.c	7;"	d	file:
+XAXIS	sections.c	/^void XAXIS()$/;"	f
+YAXIS	sections.c	/^void YAXIS()$/;"	f
+ZAXIS	sections.c	/^void ZAXIS()$/;"	f
+calculatePi	pi_omp.c	/^int calculatePi(double *piTotal, int ID)$/;"	f
+imprimir	tasks1.c	/^int imprimir(int a)$/;"	f
+iteration1	nowait_fixed.c	/^void iteration1(double *a, long n)$/;"	f
+iteration2	nowait_fixed.c	/^void iteration2(double *b, long m)$/;"	f
+main	nowait.c	/^int main()$/;"	f
+main	nowait_fixed.c	/^int main()$/;"	f
+main	omp_schedule.c	/^int main( ) $/;"	f
+main	pi_omp.c	/^int main()$/;"	f
+main	private_shared.c	/^int main()$/;"	f
+main	sections.c	/^int main()$/;"	f
+main	sections_firstprivate.c	/^int main( ) {$/;"	f
+main	tasks1.c	/^int main()$/;"	f
+nowait_example	nowait.c	/^void nowait_example(long n, long m, double *a, double *b)$/;"	f
+nowait_example	nowait_fixed.c	/^void nowait_example(long n, long m, double *a, double *b)$/;"	f
+sub	private_shared.c	/^void sub(float *x, int npoints)$/;"	f
+subdomain	private_shared.c	/^void subdomain(float *x, int istart, int ipoints)$/;"	f
+teclado	tasks1.c	/^int teclado()$/;"	f

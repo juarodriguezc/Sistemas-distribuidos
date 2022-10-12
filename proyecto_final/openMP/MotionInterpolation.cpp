@@ -14,7 +14,7 @@
 // Default PATCH_SIZE: 9 - SEARCH_SIZE: 7 - FILTER_FLOW: 2
 #define PATCH_SIZE 5
 #define SEARCH_SIZE 5
-#define FILTER_FLOW 1
+#define FILTER_FLOW 2
 #define my_sizeof(type) ((char *)(&type + 1) - (char *)(&type))
 
 using namespace cv;
@@ -344,7 +344,7 @@ Mat *interpolateFramesP(Mat *frame1, Mat *frame2, int width, int height, int nTh
     }
     resFrame = new Mat[3]{interFrame[0].clone(), interFrame[1].clone(), interFrame[2].clone()};
     // Apply the blur filter over the image
-    blurFrameP(interFrame, resFrame, opticalFlow, width, height, nThreads);
+    //blurFrameP(interFrame, resFrame, opticalFlow, width, height, nThreads);
     return resFrame;
 }
 
@@ -356,7 +356,7 @@ void printProgressBar(int iterFrame, int frameCount){
 timeval interpolateVideo(VideoCapture loadVideo, char *savePath, int nThreads)
 {
     // Declare the variables for time measurement
-    struct timeval tval_before, tval_after, tval_result, runtime;
+    struct timeval tval_before, tval_after, tval_result, runtime = (struct timeval){0};
 
     // Declare the variables for the frames
     Mat oldFrame, newFrame, saveFrame;
@@ -369,7 +369,7 @@ timeval interpolateVideo(VideoCapture loadVideo, char *savePath, int nThreads)
     int frameCount = loadVideo.get(CAP_PROP_FRAME_COUNT), iterFrame = 0, fps = loadVideo.get(CAP_PROP_FPS);
     int width = loadVideo.get(CAP_PROP_FRAME_WIDTH), height = loadVideo.get(CAP_PROP_FRAME_HEIGHT);
 
-    VideoWriter saveVideo(savePath, VideoWriter::fourcc('M', 'J', 'P', 'G'), 2*fps-1, Size(width, height));
+    VideoWriter saveVideo(savePath, VideoWriter::fourcc('M', 'J', 'P', 'G'), 2*fps, Size(width, height));
 
     // Check the value of the threads
     if (nThreads <= 0)
@@ -380,9 +380,11 @@ timeval interpolateVideo(VideoCapture loadVideo, char *savePath, int nThreads)
     while (loadVideo.read(newFrame))
     {
         //Write the original frame
-        saveVideo.write(newFrame);
+        
+        if (iterFrame == 0)
+            saveVideo.write(newFrame);
 
-        if (iterFrame > 0)
+        else if (iterFrame > 0)
         {
             // Split old frame
             split(oldFrame, imageChOld);
@@ -408,9 +410,13 @@ timeval interpolateVideo(VideoCapture loadVideo, char *savePath, int nThreads)
             interFrame = {imageInter[0], imageInter[1], imageInter[2]};
 
             merge(interFrame, saveFrame);
+
             saveVideo.write(saveFrame);
+            saveVideo.write(newFrame);
 
             printProgressBar(iterFrame, frameCount);
+
+            printf("Tiempo de ejecución: %ld.%06ld s \n", (long int)runtime.tv_sec, (long int)runtime.tv_usec);
             
         }
         if (waitKey(25) >= 0)
@@ -420,5 +426,7 @@ timeval interpolateVideo(VideoCapture loadVideo, char *savePath, int nThreads)
         iterFrame += 1;
         oldFrame = newFrame.clone();
     }
+
+    saveVideo.release();
     return runtime;
 }

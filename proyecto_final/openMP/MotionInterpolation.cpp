@@ -41,7 +41,7 @@ void blurFrameP(Mat *, Mat *, OpticalVector *, int, int, int = 0);
 Mat *interpolateFramesP(Mat *, Mat *, int, int, int = 0);
 
 // Prototype for the print the progress
-void printProgressBar(int, int);
+void printProgressBar(int, int, timeval, timeval);
 
 // Prototype for the interpolation of video
 timeval interpolateVideo(VideoCapture, char *, int = 0);
@@ -77,9 +77,10 @@ int main(int argc, char **argv)
         return -1;
     }
 
+    // Interpolate the video and get the runtime
     runtime = interpolateVideo(loadVideo, savePathVid, nThreads);
 
-    /*Imprimir informe*/
+    // Imprimir informe
     printf("------------------------------------------------------------------------------\n");
     printf("Tiempo de ejecución: %ld.%06ld s \n", (long int)runtime.tv_sec, (long int)runtime.tv_usec);
 
@@ -265,6 +266,7 @@ void blurFrameP(Mat *frame, Mat *resFrame, OpticalVector *opticalFlow, int width
             6 / 256.0, 24 / 256.0, 36 / 256.0, 24 / 256.0, 6 / 256.0,
             4 / 256.0, 16 / 256.0, 24 / 256.0, 16 / 256.0, 4 / 256.0,
             1 / 256.0, 4 / 256.0, 6 / 256.0, 4 / 256.0, 1 / 256.0};
+
     static int kSize = (int)sqrt(my_sizeof(kernel) / my_sizeof(kernel[0]));
 
     // Change the value of nThreads if is zero
@@ -327,30 +329,66 @@ Mat *interpolateFramesP(Mat *frame1, Mat *frame2, int width, int height, int nTh
     // Declare the Matrix for the intermediate frame
     Mat *interFrame = new Mat[3]{frame1[0].clone(), frame1[1].clone(), frame1[2].clone()};
     Mat *resFrame;
-    // Change the value of nThreads if is zero
+    //  Change the value of nThreads if is zero
     if (nThreads <= 0)
-        nThreads = omp_get_num_procs();
+    {
+    }
+    nThreads = omp_get_num_procs();
     // Declare the array for the Optical Flow
     OpticalVector *opticalFlow = getOpticalFlowP(frame1, frame2, width, height, nThreads);
+
     // Create the new frame interpolating the optical Flow
     for (int i = 0; i < height; i++)
     {
         for (int j = 0; j < width; j++)
         {
-            interFrame[0].at<uchar>(i + (int)(opticalFlow[i * width + j].y / 2), j + (int)(opticalFlow[i * width + j].x) / 2) = frame1[0].at<uchar>(i, j);
-            interFrame[1].at<uchar>(i + (int)(opticalFlow[i * width + j].y / 2), j + (int)(opticalFlow[i * width + j].x) / 2) = frame1[1].at<uchar>(i, j);
-            interFrame[2].at<uchar>(i + (int)(opticalFlow[i * width + j].y / 2), j + (int)(opticalFlow[i * width + j].x) / 2) = frame1[2].at<uchar>(i, j);
+            // Check if the values are inside the frame
+            if (j + (int)opticalFlow[i * width + j].x >= 0 && j + (int)opticalFlow[i * width + j].x < width &&
+                i + (int)opticalFlow[i * width + j].y >= 0 && i + (int)opticalFlow[i * width + j].y < height)
+            {
+                interFrame[0].at<uchar>(i + (int)(opticalFlow[i * width + j].y / 2), j + (int)(opticalFlow[i * width + j].x) / 2) = frame1[0].at<uchar>(i, j);
+                interFrame[1].at<uchar>(i + (int)(opticalFlow[i * width + j].y / 2), j + (int)(opticalFlow[i * width + j].x) / 2) = frame1[1].at<uchar>(i, j);
+                interFrame[2].at<uchar>(i + (int)(opticalFlow[i * width + j].y / 2), j + (int)(opticalFlow[i * width + j].x) / 2) = frame1[2].at<uchar>(i, j);
+
+                if(abs(opticalFlow[i * width + j].x) > 0 || abs(opticalFlow[i * width + j].y) > 0 )
+                {
+                    interFrame[2].at<uchar>(i + (int)(opticalFlow[i * width + j].y / 2), j + (int)(opticalFlow[i * width + j].x) / 2) = 255;
+                }
+            }
         }
     }
+
     resFrame = new Mat[3]{interFrame[0].clone(), interFrame[1].clone(), interFrame[2].clone()};
-    // Apply the blur filter over the image
-    //blurFrameP(interFrame, resFrame, opticalFlow, width, height, nThreads);
+    //  Apply the blur filter over the image
+    blurFrameP(interFrame, resFrame, opticalFlow, width, height, nThreads);
     return resFrame;
 }
 
-void printProgressBar(int iterFrame, int frameCount){
-    float progress = (int)((float)iterFrame/ (float)frameCount * 100);
-    std::cout<<"Frame: "<<iterFrame<< " / "<<frameCount<<"  -  Progress: "<<progress<<" % "<<std::endl;
+void printProgressBar(int iterFrame, int frameCount, timeval tval_result, timeval runtime)
+{
+    float progrss_100 = (int)((float)iterFrame / (float)frameCount * 100);
+    float progress_20 = (int)((float)iterFrame / (float)frameCount * 20);
+    float timeIteration = 1.0 / ((float)tval_result.tv_sec + ((float)tval_result.tv_usec / 1000000.0));
+
+    // Clear the console
+    // system("clear");
+
+    std::cout << "Frame: " << iterFrame << " / " << frameCount << "   [" << timeIteration << " frames / s";
+    std::cout << "] [";
+    for (int i = 0; i < progress_20 - 1; i++)
+    {
+        std::cout << "=";
+    }
+    std::cout << ">";
+    for (int i = progress_20 + 1; i < 20; i++)
+    {
+        std::cout << " ";
+    }
+    std::cout << "]   " << progrss_100 << "%"
+              << "    ET: ";
+
+    printf("%ld.%06ld s     ", (long int)runtime.tv_sec, (long int)runtime.tv_usec);
+    printf("ET/F: %ld.%06ld s \n \n", (long int)tval_result.tv_sec, (long int)tval_result.tv_usec);
 }
 
 timeval interpolateVideo(VideoCapture loadVideo, char *savePath, int nThreads)
@@ -369,20 +407,31 @@ timeval interpolateVideo(VideoCapture loadVideo, char *savePath, int nThreads)
     int frameCount = loadVideo.get(CAP_PROP_FRAME_COUNT), iterFrame = 0, fps = loadVideo.get(CAP_PROP_FPS);
     int width = loadVideo.get(CAP_PROP_FRAME_WIDTH), height = loadVideo.get(CAP_PROP_FRAME_HEIGHT);
 
-    VideoWriter saveVideo(savePath, VideoWriter::fourcc('M', 'J', 'P', 'G'), 2*fps, Size(width, height));
+    VideoWriter saveVideo(savePath, VideoWriter::fourcc('M', 'J', 'P', 'G'), 2 * fps, Size(width, height));
 
     // Check the value of the threads
     if (nThreads <= 0)
         nThreads = omp_get_num_procs();
 
-    std::cout << width << "-" << height << std::endl;
+    // Print the video information
+    std::cout << "--------------------------------------------------" << std::endl;
+    std::cout << "                Motion interpolation              " << std::endl;
+    std::cout << "--------------------------------------------------" << std::endl;
+
+    std::cout << "Video resolution: " << width << "px * " << height << "px" << std::endl;
+    std::cout << "FPS: " << fps << std::endl;
+    std::cout << "Total frames: " << frameCount << std::endl;
+
+    std::cout << "--------------------------------------------------" << std::endl;
 
     while (loadVideo.read(newFrame))
     {
-        //Write the original frame
-        
+        // Write the original frame
+
         if (iterFrame == 0)
+        {
             saveVideo.write(newFrame);
+        }
 
         else if (iterFrame > 0)
         {
@@ -395,16 +444,15 @@ timeval interpolateVideo(VideoCapture loadVideo, char *savePath, int nThreads)
             gettimeofday(&tval_before, NULL);
 
             // Interpolate the frames
-            imageInter = interpolateFramesP(imageChOld, imageChNew, width, height);
+            imageInter = interpolateFramesP(imageChOld, imageChNew, width, height, nThreads);
 
             //  Get end time
             gettimeofday(&tval_after, NULL);
 
-
-            //Save results
+            // Save results
             timersub(&tval_after, &tval_before, &tval_result);
 
-            //Update runtime
+            // Update runtime
             timeradd(&runtime, &tval_result, &runtime);
 
             interFrame = {imageInter[0], imageInter[1], imageInter[2]};
@@ -412,19 +460,17 @@ timeval interpolateVideo(VideoCapture loadVideo, char *savePath, int nThreads)
             merge(interFrame, saveFrame);
 
             saveVideo.write(saveFrame);
+
             saveVideo.write(newFrame);
 
-            printProgressBar(iterFrame, frameCount);
-
-            printf("Tiempo de ejecución: %ld.%06ld s \n", (long int)runtime.tv_sec, (long int)runtime.tv_usec);
-            
+            printProgressBar(iterFrame, frameCount, tval_result, runtime);
         }
         if (waitKey(25) >= 0)
         {
             break;
         }
         iterFrame += 1;
-        oldFrame = newFrame.clone();
+        newFrame.copyTo(oldFrame);
     }
 
     saveVideo.release();

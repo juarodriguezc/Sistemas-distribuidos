@@ -20,6 +20,11 @@ if [ ! -f "MotionInterpolation" ]; then
 fi
 echo "Compilando el programa ..."
 make
-echo "Ejecutando el programa"
 
-./MotionInterpolation src/video/test2/test.mp4 src/video/test2/result.avi 8
+if [ $? -eq 0 ]; then
+   echo "Compilación terminada"
+   echo "Ejecutando el programa ..."
+  ./MotionInterpolation src/img/test1/frame1.jpg src/img/test1/frame2.jpg src/img/test1/ 8
+  ./MotionInterpolation src/img/test2/frame1.jpg src/img/test2/frame2.jpg src/img/test2/ 8
+fi
+

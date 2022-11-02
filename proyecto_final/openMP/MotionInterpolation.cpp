@@ -6,15 +6,15 @@
 #include <opencv2/opencv.hpp>
 
 // Set the number of arguments required
-#define R_ARGS 3
+#define R_ARGS 4
 // Set the precision of the motionImage
-#define MOTION_PRES 0.1f
+#define MOTION_PRES 0.05f
 
 // Set the parameters for the optical flow
 // Default PATCH_SIZE: 9 - SEARCH_SIZE: 7 - FILTER_FLOW: 2
-#define PATCH_SIZE 5
-#define SEARCH_SIZE 5
-#define FILTER_FLOW 2
+#define PATCH_SIZE 9
+#define SEARCH_SIZE 17
+#define FILTER_FLOW 6
 #define my_sizeof(type) ((char *)(&type + 1) - (char *)(&type))
 
 using namespace cv;
@@ -38,7 +38,7 @@ OpticalVector *getOpticalFlowP(Mat *, Mat *, int, int, int = 0);
 void blurFrameP(Mat *, Mat *, OpticalVector *, int, int, int = 0);
 
 // Prototype for the interpolation of frame
-Mat *interpolateFramesP(Mat *, Mat *, int, int, int = 0);
+Mat *interpolateFramesP(Mat *, Mat *, OpticalVector *, int, int, int = 0);
 
 // Prototype for the print the progress
 void printProgressBar(int, int, timeval, timeval);
@@ -49,26 +49,37 @@ timeval interpolateVideo(VideoCapture, char *, int = 0);
 int main(int argc, char **argv)
 {
     // Declare the variables for time measurement
-    struct timeval runtime;
+    struct timeval tval_before, tval_after, tval_result;
     // Declare the strings of load and save video
-    char *loadPathVid, *savePathVid;
+    char *loadPathFr1, *loadPathFr2, *savePath;
     // Declare the Matrix to store the image
-    VideoCapture loadVideo, saveVideo;
-    // Declare the number of threads
+    Mat loadIFrame1, loadIFrame2, saveImage;
+    // Declare 3 Matrix for each channel
+    Mat imageChF1[3], imageChF2[3];
+    Mat *imageInter;
+    // Declare the size of each frame
+    Size frameSize;
+    int width, height;
+    // Declare the vector to merge the channels
+    std::vector<Mat> interFrame;
+
     int nThreads;
     // Check if the number of arguments is correct
     if (argc < R_ARGS + 1)
     {
-        printf("Usage: ./MotionInterpolation <Load_Video_Path> <Save_Video_Path> <nThreads>\n");
+        printf("Usage: ./MotionInterpolation <Load_frame1_Path> <Load_frame2_Path> <Save_frame_Path> <nThreads>\n");
         return -1;
     }
     // Update the paths
-    loadPathVid = argv[1];
-    savePathVid = argv[2];
-    nThreads = atoi(argv[3]);
+    loadPathFr1 = argv[1];
+    loadPathFr2 = argv[2];
+    savePath = argv[3];
+    nThreads = atoi(argv[4]);
 
-    // Load the video from the path
-    loadVideo = VideoCapture(loadPathVid);
+    // Get start time
+    gettimeofday(&tval_before, NULL);
+
+    VideoCapture loadVideo(loadPathFr1);
 
     // Check video opened successfully
     if (!loadVideo.isOpened())
@@ -77,14 +88,97 @@ int main(int argc, char **argv)
         return -1;
     }
 
-    // Interpolate the video and get the runtime
-    runtime = interpolateVideo(loadVideo, savePathVid, nThreads);
+    //interpolateVideo(loadVideo, tval_result);
 
-    // Imprimir informe
+    
+    // Load the first frame
+    loadIFrame1 = imread(loadPathFr1, IMREAD_UNCHANGED);
+    if (!loadIFrame1.data)
+    {
+        // Show error if image not loaded correctly
+        printf("No image data Frame 1\n");
+        return -1;
+    }
+    // Load the second frame
+    loadIFrame2 = imread(loadPathFr2, IMREAD_UNCHANGED);
+    if (!loadIFrame2.data)
+    {
+        // Show error if image not loaded correctly
+        printf("No image data Frame 2 \n");
+        return -1;
+    }
+
+
+
+    // Split first frame
+    split(loadIFrame1, imageChF1);
+    // Split second frame
+    split(loadIFrame2, imageChF2);
+
+    // Get the frame dimension
+    frameSize = loadIFrame1.size();
+    width = frameSize.width;
+    height = frameSize.height;
+
+    // Interpolate the frames
+
+    struct OpticalVector *optFlow = (OpticalVector *)malloc(width * height * sizeof(struct OpticalVector));
+
+    imageInter = interpolateFramesP(imageChF1, imageChF2, optFlow, frameSize.width, frameSize.height, nThreads);
+
+    Mat optFlowFram;
+    loadIFrame1.copyTo(optFlowFram);
+
+    for(int i = 0; i < height; i+=5){
+        for(int j = 0; j < width; j+=5){
+            Point p0(j, i);
+            Point p1(j + optFlow[i*width+j].x, i + optFlow[i*width+j].y);
+            if(abs(optFlow[i*width+j].x) + abs(optFlow[i*width+j].y) > 0){
+                line(optFlowFram, p0, p1, Scalar(0, 255, 0), 1, LINE_AA);
+                circle( optFlowFram, p0, 1, Scalar( 0, 0, 255 ), FILLED, LINE_8 );
+
+            }
+        }
+    }
+
+
+    
+    
+    
+    
+
+    
+    
+
+    // Calcular los tiempos en tval_result
+    //  Get end time
+    gettimeofday(&tval_after, NULL);
+
+    timersub(&tval_after, &tval_before, &tval_result);
+    /*Imprimir informe*/
     printf("------------------------------------------------------------------------------\n");
-    printf("Tiempo de ejecución: %ld.%06ld s \n", (long int)runtime.tv_sec, (long int)runtime.tv_usec);
+    printf("Tiempo de ejecución: %ld.%06ld s \n", (long int)tval_result.tv_sec, (long int)tval_result.tv_usec);
 
-    destroyAllWindows();
+    
+    // Save channels into the vector
+    interFrame = {imageInter[0], imageInter[1], imageInter[2]};
+    // Merge the channels
+    merge(interFrame, saveImage);
+
+    // writing the image to a defined location as JPEG
+    if (imwrite(savePath+std::string("frame1a.jpg"), saveImage) == false)
+    {
+        std::cout << "Saving the generated frame, FAILED" << std::endl;
+        return -1;
+    }
+
+    if (imwrite(savePath+std::string("optFlow.jpg"), optFlowFram) == false)
+    {
+        std::cout << "Saving the opticalFlow, FAILED" << std::endl;
+        return -1;
+    }
+    
+
     return 0;
 }
 
@@ -113,9 +207,10 @@ Mat1f getLuminanceP(Mat B, Mat G, Mat R, int width, int height, int nThreads)
 
         for (startPos; startPos <= endPos; startPos++)
         {
-            fB = (float)B.at<uchar>(i, j);
-            fG = (float)G.at<uchar>(i, j);
-            fR = (float)R.at<uchar>(i, j);
+            fB = (float)B.at<uchar>(i, j) / 255.0;
+            fG = (float)G.at<uchar>(i, j) / 255.0;
+            fR = (float)R.at<uchar>(i, j) / 255.0;
+
             lMatrix.at<float>(i, j) = 0.2987f * fR + 0.5870f * fG + 0.1140f * fB;
             j += 1;
             if (j == width)
@@ -159,6 +254,15 @@ OpticalVector *getOpticalFlowP(Mat *frame1, Mat *frame2, int width, int height, 
     Mat1f lFrame2 = getLuminanceP(frame2[0], frame2[1], frame2[2], width, height, nThreads);
     // Get the motionFrame of the frames
     Mat1f motionFrame = getMotionImage(lFrame1, lFrame2, width, height);
+
+    for(int i = 0; i < height; i++){
+        for(int j = 0; j < width; j++){
+            //std::cout<<motionFrame.at<float>(i, j)<<std::endl;
+        }
+    }
+    //imshow("Output", motionFrame);
+    //waitKey(0);
+
     // Create array of OpticalVector for the optical flow
     struct OpticalVector *optFlow = (OpticalVector *)malloc(width * height * sizeof(struct OpticalVector));
 
@@ -186,7 +290,7 @@ OpticalVector *getOpticalFlowP(Mat *frame1, Mat *frame2, int width, int height, 
             // Initialize the vector
             optFlow[i * width + j].x = 0;
             optFlow[i * width + j].y = 0;
-            if ((int)motionFrame.at<float>(i, j) > 0)
+            if (motionFrame.at<float>(i, j) > 0)
             {
                 // Initialize the variables
                 fPatchDifferenceMax = INFINITY;
@@ -253,21 +357,34 @@ OpticalVector *getOpticalFlowP(Mat *frame1, Mat *frame2, int width, int height, 
             }
         }
     }
-
     return optFlow;
 }
 
 void blurFrameP(Mat *frame, Mat *resFrame, OpticalVector *opticalFlow, int width, int height, int nThreads)
 {
+    /*
     static float kernel[25] =
         {
             1 / 256.0, 4 / 256.0, 6 / 256.0, 4 / 256.0, 1 / 256.0,
             4 / 256.0, 16 / 256.0, 24 / 256.0, 16 / 256.0, 4 / 256.0,
             6 / 256.0, 24 / 256.0, 36 / 256.0, 24 / 256.0, 6 / 256.0,
             4 / 256.0, 16 / 256.0, 24 / 256.0, 16 / 256.0, 4 / 256.0,
-            1 / 256.0, 4 / 256.0, 6 / 256.0, 4 / 256.0, 1 / 256.0};
+            1 / 256.0, 4 / 256.0, 6 / 256.0, 4 / 256.0, 1 / 256.0
+        };
+    */
+
+   static float kernel[9] =
+        {
+            1 / 16.0, 1 / 8.0,  1 / 16.0,
+            1 / 8.0 , 1 / 4.0,  1 / 8.0,
+            1 / 16.0, 1 / 8.0,  1 / 16.0    
+        };
+
+
+
 
     static int kSize = (int)sqrt(my_sizeof(kernel) / my_sizeof(kernel[0]));
+
 
     // Change the value of nThreads if is zero
     if (nThreads <= 0)
@@ -287,7 +404,7 @@ void blurFrameP(Mat *frame, Mat *resFrame, OpticalVector *opticalFlow, int width
         float conv[3] = {0.0, 0.0, 0.0};
         for (startPos; startPos <= endPos; startPos++)
         {
-            if (abs(opticalFlow[i * width + j].x) > FILTER_FLOW || abs(opticalFlow[i * width + j].y) > FILTER_FLOW)
+            if (abs(opticalFlow[i * width + j].x) + abs(opticalFlow[i * width + j].y) > FILTER_FLOW)
             {
                 if (i > kSize && i < height - kSize && j > kSize && j < width - kSize)
                 {
@@ -298,9 +415,9 @@ void blurFrameP(Mat *frame, Mat *resFrame, OpticalVector *opticalFlow, int width
                     {
                         for (int j1 = 0; j1 < kSize; j1++)
                         {
-                            conv[0] += kernel[i1 * 5 + j1] * frame[0].at<uchar>(i + i1 - kSize / 2, j + j1 - kSize / 2);
-                            conv[1] += kernel[i1 * 5 + j1] * frame[1].at<uchar>(i + i1 - kSize / 2, j + j1 - kSize / 2);
-                            conv[2] += kernel[i1 * 5 + j1] * frame[2].at<uchar>(i + i1 - kSize / 2, j + j1 - kSize / 2);
+                            conv[0] += kernel[i1 * kSize + j1] * frame[0].at<uchar>(i + i1 - kSize / 2, j + j1 - kSize / 2);
+                            conv[1] += kernel[i1 * kSize + j1] * frame[1].at<uchar>(i + i1 - kSize / 2, j + j1 - kSize / 2);
+                            conv[2] += kernel[i1 * kSize + j1] * frame[2].at<uchar>(i + i1 - kSize / 2, j + j1 - kSize / 2);
                         }
                     }
                     // Check if the value is correct
@@ -324,18 +441,48 @@ void blurFrameP(Mat *frame, Mat *resFrame, OpticalVector *opticalFlow, int width
     }
 }
 
-Mat *interpolateFramesP(Mat *frame1, Mat *frame2, int width, int height, int nThreads)
+Mat *interpolateFramesP(Mat *frame1, Mat *frame2, OpticalVector *optFlow, int width, int height, int nThreads)
 {
     // Declare the Matrix for the intermediate frame
-    Mat *interFrame = new Mat[3]{frame1[0].clone(), frame1[1].clone(), frame1[2].clone()};
+    Mat *interFrame1 = new Mat[3]{frame1[0].clone(), frame1[1].clone(), frame1[2].clone()};
+    Mat *interFrame2 = new Mat[3]{frame2[0].clone(), frame2[1].clone(), frame2[2].clone()};
+    Mat *joinFrame = new Mat[3]{Mat::zeros(Size(width, height), CV_8UC1), Mat::zeros(Size(width, height), CV_8UC1), Mat::zeros(Size(width, height), CV_8UC1)};
+
+
     Mat *resFrame;
+
     //  Change the value of nThreads if is zero
     if (nThreads <= 0)
     {
+        nThreads = omp_get_num_procs();
     }
-    nThreads = omp_get_num_procs();
     // Declare the array for the Optical Flow
-    OpticalVector *opticalFlow = getOpticalFlowP(frame1, frame2, width, height, nThreads);
+
+    struct OpticalVector *opticalFlow = getOpticalFlowP(frame1, frame2, width, height, nThreads);
+
+    //Set the values of the optFlow array
+    for(int i = 0; i < width*height; i++)
+        optFlow[i] = opticalFlow[i];
+
+    int linearDiv = 2;
+
+    /*
+    for (int i = 0; i < height; i++)
+    {
+        for (int j = 0; j < width; j++)
+        {
+            interFrame1[0].at<uchar>(i , j) = 0;
+            interFrame1[1].at<uchar>(i , j) = 0;
+            interFrame1[2].at<uchar>(i , j) = 0;
+
+            interFrame2[0].at<uchar>(i , j) = 0;
+            interFrame2[1].at<uchar>(i , j) = 0;
+            interFrame2[2].at<uchar>(i , j) = 0;
+        }
+    }
+
+    */
+    
 
     // Create the new frame interpolating the optical Flow
     for (int i = 0; i < height; i++)
@@ -346,21 +493,34 @@ Mat *interpolateFramesP(Mat *frame1, Mat *frame2, int width, int height, int nTh
             if (j + (int)opticalFlow[i * width + j].x >= 0 && j + (int)opticalFlow[i * width + j].x < width &&
                 i + (int)opticalFlow[i * width + j].y >= 0 && i + (int)opticalFlow[i * width + j].y < height)
             {
-                interFrame[0].at<uchar>(i + (int)(opticalFlow[i * width + j].y / 2), j + (int)(opticalFlow[i * width + j].x) / 2) = frame1[0].at<uchar>(i, j);
-                interFrame[1].at<uchar>(i + (int)(opticalFlow[i * width + j].y / 2), j + (int)(opticalFlow[i * width + j].x) / 2) = frame1[1].at<uchar>(i, j);
-                interFrame[2].at<uchar>(i + (int)(opticalFlow[i * width + j].y / 2), j + (int)(opticalFlow[i * width + j].x) / 2) = frame1[2].at<uchar>(i, j);
+                interFrame1[0].at<uchar>(i + (int)(opticalFlow[i * width + j].y / linearDiv), j + (int)(opticalFlow[i * width + j].x) / linearDiv) = frame1[0].at<uchar>(i, j);
+                interFrame1[1].at<uchar>(i + (int)(opticalFlow[i * width + j].y / linearDiv), j + (int)(opticalFlow[i * width + j].x) / linearDiv) = frame1[1].at<uchar>(i, j);
+                interFrame1[2].at<uchar>(i + (int)(opticalFlow[i * width + j].y / linearDiv), j + (int)(opticalFlow[i * width + j].x) / linearDiv) = frame1[2].at<uchar>(i, j);
 
-                if(abs(opticalFlow[i * width + j].x) > 0 || abs(opticalFlow[i * width + j].y) > 0 )
-                {
-                    interFrame[2].at<uchar>(i + (int)(opticalFlow[i * width + j].y / 2), j + (int)(opticalFlow[i * width + j].x) / 2) = 255;
-                }
+
+                interFrame2[0].at<uchar>(i + (int)(opticalFlow[i * width + j].y / linearDiv), j + (int)(opticalFlow[i * width + j].x) / linearDiv) = frame2[0].at<uchar>(i, j);
+                interFrame2[1].at<uchar>(i + (int)(opticalFlow[i * width + j].y / linearDiv), j + (int)(opticalFlow[i * width + j].x) / linearDiv) = frame2[1].at<uchar>(i, j);
+                interFrame2[2].at<uchar>(i + (int)(opticalFlow[i * width + j].y / linearDiv), j + (int)(opticalFlow[i * width + j].x) / linearDiv) = frame2[2].at<uchar>(i, j);
             }
         }
     }
 
-    resFrame = new Mat[3]{interFrame[0].clone(), interFrame[1].clone(), interFrame[2].clone()};
+    for (int i = 0; i < height; i++)
+    {
+        for (int j = 0; j < width; j++)
+        {
+            joinFrame[0].at<uchar>(i , j) = (interFrame1[0].at<uchar>(i, j) + interFrame2[0].at<uchar>(i, j))/2;
+            joinFrame[1].at<uchar>(i , j) = (interFrame1[1].at<uchar>(i, j) + interFrame2[1].at<uchar>(i, j))/2;
+            joinFrame[2].at<uchar>(i , j) = (interFrame1[2].at<uchar>(i, j) + interFrame2[2].at<uchar>(i, j))/2;
+
+        }
+    }
+
+
+    resFrame = new Mat[3]{joinFrame[0].clone(), joinFrame[1].clone(), joinFrame[2].clone()};
     //  Apply the blur filter over the image
-    blurFrameP(interFrame, resFrame, opticalFlow, width, height, nThreads);
+    blurFrameP(joinFrame, resFrame, opticalFlow, width, height, nThreads);
+
     return resFrame;
 }
 
@@ -443,8 +603,10 @@ timeval interpolateVideo(VideoCapture loadVideo, char *savePath, int nThreads)
             // Get start time
             gettimeofday(&tval_before, NULL);
 
+            struct OpticalVector *opticalFlow;
+
             // Interpolate the frames
-            imageInter = interpolateFramesP(imageChOld, imageChNew, width, height, nThreads);
+            imageInter = interpolateFramesP(imageChOld, imageChNew, opticalFlow, width, height, nThreads);
 
             //  Get end time
             gettimeofday(&tval_after, NULL);

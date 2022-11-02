@@ -24,7 +24,7 @@ make
 if [ $? -eq 0 ]; then
    echo "Compilación terminada"
    echo "Ejecutando el programa ..."
-  ./MotionInterpolation src/img/test1/frame1.jpg src/img/test1/frame2.jpg src/img/test1/ 8
+  #./MotionInterpolation src/img/test1/frame1.jpg src/img/test1/frame2.jpg src/img/test1/ 8
   ./MotionInterpolation src/img/test2/frame1.jpg src/img/test2/frame2.jpg src/img/test2/ 8
 fi
 

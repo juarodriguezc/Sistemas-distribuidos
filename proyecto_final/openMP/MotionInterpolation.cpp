@@ -6,15 +6,15 @@
 #include <opencv2/opencv.hpp>
 
 // Set the number of arguments required
-#define R_ARGS 4
+#define R_ARGS 3
 // Set the precision of the motionImage
 #define MOTION_PRES 0.05f
 
 // Set the parameters for the optical flow
-// Default PATCH_SIZE: 9 - SEARCH_SIZE: 7 - FILTER_FLOW: 2
+// Default PATCH_SIZE: 9 - SEARCH_SIZE: 17 - FILTER_FLOW: 6
 #define PATCH_SIZE 9
-#define SEARCH_SIZE 17
-#define FILTER_FLOW 6
+#define SEARCH_SIZE 7
+#define FILTER_FLOW 3
 
 #define my_sizeof(type) ((char *)(&type + 1) - (char *)(&type))
 
@@ -64,38 +64,191 @@ timeval interpolateVideo(VideoCapture, char *, int = 0);
 
 int main(int argc, char **argv)
 {
+    /*
+    {
+        // Declare the variables for time measurement
+        struct timeval tval_before, tval_after, tval_result;
+        // Declare the strings of load and save video
+        char *loadPathFr1, *loadPathFr2, *savePath;
+        // Declare the Matrix to store the image
+        Mat loadIFrame1, loadIFrame2, saveImage;
+        // Declare 3 Matrix for each channel
+        Mat imageChF1[3], imageChF2[3];
+
+        // Declare the size of each frame
+        Size frameSize;
+        int width, height, channels;
+        // Declare the vector to merge the channels
+        // std::vector<Mat> interFrame;
+
+        int nThreads;
+        // Check if the number of arguments is correct
+        if (argc < R_ARGS + 1)
+        {
+            printf("Usage: ./MotionInterpolation <Load_frame1_Path> <Load_frame2_Path> <Save_frame_Path> <nThreads>\n");
+            return -1;
+        }
+        // Update the paths
+        loadPathFr1 = argv[1];
+        loadPathFr2 = argv[2];
+        savePath = argv[3];
+        nThreads = atoi(argv[4]);
+
+        // Get start time
+        gettimeofday(&tval_before, NULL);
+
+        VideoCapture loadVideo(loadPathFr1);
+
+        // Check video opened successfully
+        if (!loadVideo.isOpened())
+        {
+            std::cout << "Error opening video stream or file" << std::endl;
+            return -1;
+        }
+
+        // interpolateVideo(loadVideo, tval_result);
+
+        // Load the first frame
+        loadIFrame1 = imread(loadPathFr1, IMREAD_UNCHANGED);
+        if (!loadIFrame1.data)
+        {
+            // Show error if image not loaded correctly
+            printf("No image data Frame 1\n");
+            return -1;
+        }
+        // Load the second frame
+        loadIFrame2 = imread(loadPathFr2, IMREAD_UNCHANGED);
+        if (!loadIFrame2.data)
+        {
+            // Show error if image not loaded correctly
+            printf("No image data Frame 2 \n");
+            return -1;
+        }
+
+        // Get the frame dimension
+        frameSize = loadIFrame1.size();
+        width = frameSize.width;
+        height = frameSize.height;
+        channels = loadIFrame1.channels();
+
+        uchar *uFrame1[channels];
+        uchar *uFrame2[channels];
+        uchar *interFrame[channels];
+
+        matToUchar(loadIFrame1, uFrame1, width, height, channels);
+        matToUchar(loadIFrame2, uFrame2, width, height, channels);
+
+        uchar *uFrame3[channels];
+
+        cloneFrame(uFrame1, uFrame3, width, height, channels);
+
+        struct OpticalVector *optFlow = (OpticalVector *)malloc(width * height * sizeof(struct OpticalVector));
+
+        // Mat resFrame = Mat::zeros(Size(width, height), CV_8UC3);
+
+        Mat resFrame = Mat::zeros(Size(width, height), CV_8UC3);
+        createFrame(interFrame, width, height, channels);
+
+        interpolateFramesP(uFrame1, uFrame2, interFrame, optFlow, frameSize.width, frameSize.height, channels, nThreads);
+
+        // Mat imageInter = Mat::zeros(Size(width, height), CV_8UC3);
+
+        ucharToMat(interFrame, resFrame, width, height, channels);
+
+        if (imwrite(savePath + std::string("ucharTest.jpg"), resFrame) == false)
+        {
+            std::cout << "Saving the generated frame, FAILED" << std::endl;
+            return -1;
+        }
+
+        // Interpolate the frames
+        // struct OpticalVector *optFlow = (OpticalVector *)malloc(width * height * sizeof(struct OpticalVector));
+
+        /*
+
+        // Split first frame
+        split(loadIFrame1, imageChF1);
+        // Split second frame
+        split(loadIFrame2, imageChF2);
+
+        // Get the frame dimension
+        frameSize = loadIFrame1.size();
+        width = frameSize.width;
+        height = frameSize.height;
+
+        // Interpolate the frames
+
+        struct OpticalVector *optFlow = (OpticalVector *)malloc(width * height * sizeof(struct OpticalVector));
+
+        imageInter = interpolateFramesP(imageChF1, imageChF2, optFlow, frameSize.width, frameSize.height, nThreads);
+
+        Mat optFlowFram;
+        loadIFrame1.copyTo(optFlowFram);
+
+        for (int i = 0; i < height; i += 5)
+        {
+            for (int j = 0; j < width; j += 5)
+            {
+                Point p0(j, i);
+                Point p1(j + optFlow[i * width + j].x, i + optFlow[i * width + j].y);
+                if (abs(optFlow[i * width + j].x) + abs(optFlow[i * width + j].y) > 0)
+                {
+                    line(optFlowFram, p0, p1, Scalar(0, 255, 0), 1, LINE_AA);
+                    circle(optFlowFram, p0, 1, Scalar(0, 0, 255), FILLED, LINE_8);
+                }
+            }
+        }
+
+        // Calcular los tiempos en tval_result
+        //  Get end time
+        gettimeofday(&tval_after, NULL);
+
+        timersub(&tval_after, &tval_before, &tval_result);
+        //Imprimir informe
+        printf("------------------------------------------------------------------------------\n");
+        printf("Tiempo de ejecución: %ld.%06ld s \n", (long int)tval_result.tv_sec, (long int)tval_result.tv_usec);
+
+        // Save channels into the vector
+        interFrame = {imageInter[0], imageInter[1], imageInter[2]};
+        // Merge the channels
+        merge(interFrame, saveImage);
+
+        // writing the image to a defined location as JPEG
+        if (imwrite(savePath + std::string("frame1a.jpg"), saveImage) == false)
+        {
+            std::cout << "Saving the generated frame, FAILED" << std::endl;
+            return -1;
+        }
+
+        if (imwrite(savePath + std::string("optFlow.jpg"), optFlowFram) == false)
+        {
+            std::cout << "Saving the opticalFlow, FAILED" << std::endl;
+            return -1;
+        }
+    }
+    */
+
     // Declare the variables for time measurement
-    struct timeval tval_before, tval_after, tval_result;
+    struct timeval runtime;
     // Declare the strings of load and save video
-    char *loadPathFr1, *loadPathFr2, *savePath;
+    char *loadPathVid, *savePathVid;
     // Declare the Matrix to store the image
-    Mat loadIFrame1, loadIFrame2, saveImage;
-    // Declare 3 Matrix for each channel
-    Mat imageChF1[3], imageChF2[3];
-
-    // Declare the size of each frame
-    Size frameSize;
-    int width, height, channels;
-    // Declare the vector to merge the channels
-    // std::vector<Mat> interFrame;
-
+    VideoCapture loadVideo, saveVideo;
+    // Declare the number of threads
     int nThreads;
     // Check if the number of arguments is correct
     if (argc < R_ARGS + 1)
     {
-        printf("Usage: ./MotionInterpolation <Load_frame1_Path> <Load_frame2_Path> <Save_frame_Path> <nThreads>\n");
+        printf("Usage: ./MotionInterpolation <Load_Video_Path> <Save_Video_Path> <nThreads>\n");
         return -1;
     }
     // Update the paths
-    loadPathFr1 = argv[1];
-    loadPathFr2 = argv[2];
-    savePath = argv[3];
-    nThreads = atoi(argv[4]);
+    loadPathVid = argv[1];
+    savePathVid = argv[2];
+    nThreads = atoi(argv[3]);
 
-    // Get start time
-    gettimeofday(&tval_before, NULL);
-
-    VideoCapture loadVideo(loadPathFr1);
+    // Load the video from the path
+    loadVideo = VideoCapture(loadPathVid);
 
     // Check video opened successfully
     if (!loadVideo.isOpened())
@@ -104,128 +257,14 @@ int main(int argc, char **argv)
         return -1;
     }
 
-    // interpolateVideo(loadVideo, tval_result);
+    // Interpolate the video and get the runtime
+    runtime = interpolateVideo(loadVideo, savePathVid, nThreads);
 
-    // Load the first frame
-    loadIFrame1 = imread(loadPathFr1, IMREAD_UNCHANGED);
-    if (!loadIFrame1.data)
-    {
-        // Show error if image not loaded correctly
-        printf("No image data Frame 1\n");
-        return -1;
-    }
-    // Load the second frame
-    loadIFrame2 = imread(loadPathFr2, IMREAD_UNCHANGED);
-    if (!loadIFrame2.data)
-    {
-        // Show error if image not loaded correctly
-        printf("No image data Frame 2 \n");
-        return -1;
-    }
-
-    // Get the frame dimension
-    frameSize = loadIFrame1.size();
-    width = frameSize.width;
-    height = frameSize.height;
-    channels = loadIFrame1.channels();
-
-    uchar *uFrame1[channels];
-    uchar *uFrame2[channels];
-    uchar *interFrame[channels];
-
-    matToUchar(loadIFrame1, uFrame1, width, height, channels);
-    matToUchar(loadIFrame2, uFrame2, width, height, channels);
-
-    uchar *uFrame3[channels];
-
-    cloneFrame(uFrame1, uFrame3, width, height, channels);
-
-    struct OpticalVector *optFlow = (OpticalVector *)malloc(width * height * sizeof(struct OpticalVector));
-
-    // Mat resFrame = Mat::zeros(Size(width, height), CV_8UC3);
-
-    Mat resFrame = Mat::zeros(Size(width, height), CV_8UC3);
-    createFrame(interFrame, width, height, channels);
-
-    interpolateFramesP(uFrame1, uFrame2, interFrame, optFlow, frameSize.width, frameSize.height, channels, nThreads);
-
-    // Mat imageInter = Mat::zeros(Size(width, height), CV_8UC3);
-
-    ucharToMat(interFrame, resFrame, width, height, channels);
-
-    if (imwrite(savePath + std::string("ucharTest.jpg"), resFrame) == false)
-    {
-        std::cout << "Saving the generated frame, FAILED" << std::endl;
-        return -1;
-    }
-
-    // Interpolate the frames
-    // struct OpticalVector *optFlow = (OpticalVector *)malloc(width * height * sizeof(struct OpticalVector));
-
-    /*
-
-    // Split first frame
-    split(loadIFrame1, imageChF1);
-    // Split second frame
-    split(loadIFrame2, imageChF2);
-
-    // Get the frame dimension
-    frameSize = loadIFrame1.size();
-    width = frameSize.width;
-    height = frameSize.height;
-
-    // Interpolate the frames
-
-    struct OpticalVector *optFlow = (OpticalVector *)malloc(width * height * sizeof(struct OpticalVector));
-
-    imageInter = interpolateFramesP(imageChF1, imageChF2, optFlow, frameSize.width, frameSize.height, nThreads);
-
-    Mat optFlowFram;
-    loadIFrame1.copyTo(optFlowFram);
-
-    for (int i = 0; i < height; i += 5)
-    {
-        for (int j = 0; j < width; j += 5)
-        {
-            Point p0(j, i);
-            Point p1(j + optFlow[i * width + j].x, i + optFlow[i * width + j].y);
-            if (abs(optFlow[i * width + j].x) + abs(optFlow[i * width + j].y) > 0)
-            {
-                line(optFlowFram, p0, p1, Scalar(0, 255, 0), 1, LINE_AA);
-                circle(optFlowFram, p0, 1, Scalar(0, 0, 255), FILLED, LINE_8);
-            }
-        }
-    }
-
-    // Calcular los tiempos en tval_result
-    //  Get end time
-    gettimeofday(&tval_after, NULL);
-
-    timersub(&tval_after, &tval_before, &tval_result);
-    //Imprimir informe
+    // Imprimir informe
     printf("------------------------------------------------------------------------------\n");
-    printf("Tiempo de ejecución: %ld.%06ld s \n", (long int)tval_result.tv_sec, (long int)tval_result.tv_usec);
+    printf("Tiempo de ejecución: %ld.%06ld s \n", (long int)runtime.tv_sec, (long int)runtime.tv_usec);
 
-    // Save channels into the vector
-    interFrame = {imageInter[0], imageInter[1], imageInter[2]};
-    // Merge the channels
-    merge(interFrame, saveImage);
-
-    // writing the image to a defined location as JPEG
-    if (imwrite(savePath + std::string("frame1a.jpg"), saveImage) == false)
-    {
-        std::cout << "Saving the generated frame, FAILED" << std::endl;
-        return -1;
-    }
-
-    if (imwrite(savePath + std::string("optFlow.jpg"), optFlowFram) == false)
-    {
-        std::cout << "Saving the opticalFlow, FAILED" << std::endl;
-        return -1;
-    }
-
-    */
-
+    destroyAllWindows();
     return 0;
 }
 
@@ -422,7 +461,7 @@ void getOpticalFlow(uchar **frame1, uchar **frame2, OpticalVector *optFlow, int 
     // Get the motionFrame of the frames
     float *motFrame = getMotionImage(lFrame1, lFrame2, width, height);
 
-    #pragma omp parallel num_threads(nThreads)
+#pragma omp parallel num_threads(nThreads)
     {
         // Get the id of the thread
         int thread_id = omp_get_thread_num();
@@ -561,7 +600,6 @@ void interpolateFrames(uchar **frame1, uchar **frame2, uchar **resFrame, Optical
     blurFrame(joinFrame, resFrame, optFlow, width, height, channels, nThreads);
 }
 
-
 void printProgressBar(int iterFrame, int frameCount, timeval tval_result, timeval runtime)
 {
     float progrss_100 = (int)((float)iterFrame / (float)frameCount * 100);
@@ -596,14 +634,11 @@ timeval interpolateVideo(VideoCapture loadVideo, char *savePath, int nThreads)
 
     // Declare the variables for the frames
     Mat oldFrame, newFrame, saveFrame;
-    // Declare 3 Matrix for each channel
-    Mat imageChNew[3], imageChOld[3];
-    Mat *imageInter;
-    std::vector<Mat> interFrame;
-
-    // Get the frame count
+    
+    // Get the frame count, fps, width, height and number of channels
     int frameCount = loadVideo.get(CAP_PROP_FRAME_COUNT), iterFrame = 0, fps = loadVideo.get(CAP_PROP_FPS);
     int width = loadVideo.get(CAP_PROP_FRAME_WIDTH), height = loadVideo.get(CAP_PROP_FRAME_HEIGHT);
+    int channels = 3;
 
     VideoWriter saveVideo(savePath, VideoWriter::fourcc('M', 'J', 'P', 'G'), 2 * fps, Size(width, height));
 
@@ -629,35 +664,45 @@ timeval interpolateVideo(VideoCapture loadVideo, char *savePath, int nThreads)
         if (iterFrame == 0)
         {
             saveVideo.write(newFrame);
+            channels = newFrame.channels();
         }
 
         else if (iterFrame > 0)
         {
-            // Split old frame
-            split(oldFrame, imageChOld);
-            // Split new frame
-            split(newFrame, imageChNew);
+            // Create uchar matrix for each frame
+            uchar *uFrameOld[channels];
+            uchar *uFrameNew[channels];
+            uchar *interFrame[channels];
+
+            // Load the data from the Mat to the uchar matrix
+            matToUchar(oldFrame, uFrameOld, width, height, channels);
+            matToUchar(newFrame, uFrameNew, width, height, channels);
+            // Create the uchar matrix of the new frame
+            createFrame(interFrame, width, height, channels);
+            // Create the frame Mat to export
+            Mat saveFrame = Mat::zeros(Size(width, height), CV_8UC3);
+
+            // Allocate the opticalFlow
+            struct OpticalVector *optFlow = (OpticalVector *)malloc(width * height * sizeof(struct OpticalVector));
+
+            // Interpolate the frames
 
             // Get start time
             gettimeofday(&tval_before, NULL);
 
-            struct OpticalVector *opticalFlow;
+            interpolateFrames(uFrameOld, uFrameNew, interFrame, optFlow, width, height, channels, nThreads);
 
-            // Interpolate the frames
-            //imageInter = interpolateFramesP(imageChOld, imageChNew, opticalFlow, width, height, nThreads);
-
-            //  Get end time
+            // Get end time
             gettimeofday(&tval_after, NULL);
+
+            // Convert the uchar matrix to Mat
+            ucharToMat(interFrame, saveFrame, width, height, channels);
 
             // Save results
             timersub(&tval_after, &tval_before, &tval_result);
 
             // Update runtime
             timeradd(&runtime, &tval_result, &runtime);
-
-            interFrame = {imageInter[0], imageInter[1], imageInter[2]};
-
-            merge(interFrame, saveFrame);
 
             saveVideo.write(saveFrame);
 

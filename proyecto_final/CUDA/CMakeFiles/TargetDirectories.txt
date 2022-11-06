@@ -1,0 +1,3 @@
+/home/sebastian/Desktop/distribuidos/proyecto_final/CUDA/CMakeFiles/MotionInterpolation.dir
+/home/sebastian/Desktop/distribuidos/proyecto_final/CUDA/CMakeFiles/edit_cache.dir
+/home/sebastian/Desktop/distribuidos/proyecto_final/CUDA/CMakeFiles/rebuild_cache.dir

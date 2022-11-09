@@ -68,7 +68,7 @@ void interpolateFrames(uchar *, uchar *, uchar *, OpticalVector *, int, int, int
 void printProgressBar(int, int, timeval, timeval, int, int);
 
 // Prototype for the write the inform
-void writeInform(char *, int, int, int, int, timeval, timeval, int);
+void writeInform(char *, int, int, int, int, timeval, timeval, int, int);
 
 // Prototype to export the generated frames
 void exportFrames(char *, int, Mat, Mat, OpticalVector *, int, int);
@@ -635,7 +635,7 @@ void printProgressBar(int iterFrame, int frameCount, timeval tval_result, timeva
 }
 
 // Function to the write the inform
-void writeInform(char *path, int width, int height, int iterFrame, int frameCount, timeval tval_result, timeval runtime, int nThreads)
+void writeInform(char *path, int width, int height, int iterFrame, int frameCount, timeval tval_result, timeval runtime, int nBlocks, int nThreads)
 {
     // Declare the FILE to write the times
     FILE *fp;
@@ -648,7 +648,7 @@ void writeInform(char *path, int width, int height, int iterFrame, int frameCoun
         printf("Error opening the file \n");
         exit(1);
     }
-    fprintf(fp, "%d,%d,%d,%d,%f,%ld.%06ld\n", iterFrame, width, height, nThreads, framesPSec, (long int)tval_result.tv_sec, (long int)tval_result.tv_usec);
+    fprintf(fp, "%d,%d,%d,%d,%d,%f,%ld.%06ld\n", iterFrame, width, height, nBlocks, nThreads, framesPSec, (long int)tval_result.tv_sec, (long int)tval_result.tv_usec);
     fclose(fp);
 }
 
@@ -767,7 +767,7 @@ timeval interpolateVideo(VideoCapture loadVideo, char *path, char *saveName, int
             printProgressBar(iterFrame, frameCount, tval_result, runtime, nBlocks, nThreads);
 
             //  Write the files with the times
-            writeInform(path, width, height, iterFrame, frameCount, tval_result, runtime, nThreads);
+            writeInform(path, width, height, iterFrame, frameCount, tval_result, runtime, nBlocks, nThreads);
             // Export the frames if is required
             if (expFrames)
                 exportFrames(path, iterFrame, oldFrame, saveFrame, optFlow, width, height);

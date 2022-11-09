@@ -25,8 +25,8 @@ if [ $? -eq 0 ]; then
   do
     for (( i=1; i<=(16); i=i*2 ))
     do
-      ./MotionInterpolation src/video/test"$test"/ test.mp4 result.avi 0 $i
+      ./MotionInterpolation src/video/test"$test"/ test.mp4 result.avi 80 0 $i
     done
   done
 fi
-
+#./MotionInterpolation src/video/test4/ test.mp4 result.avi 80 1 16

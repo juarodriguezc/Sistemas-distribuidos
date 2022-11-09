@@ -13,7 +13,7 @@
 #include <opencv2/opencv.hpp>
 
 // Set the number of arguments required
-#define R_ARGS 5
+#define R_ARGS 6
 // Set the precision of the motionImage
 #define MOTION_PRES 0.05f
 
@@ -34,34 +34,34 @@ struct OpticalVector
 };
 
 // Prototype to cast Mat to uchar*
-void matToUchar(Mat, uchar **, int, int, int = 3);
+void matToUchar(Mat, uchar *, int, int, int = 3);
 
 // Prototype to cast uchar to Mat
-void ucharToMat(uchar **, Mat, int, int, int = 3);
+void ucharToMat(uchar *, Mat, int, int, int = 3);
 
 // Prototype to cast float* to Mat
 void floatToMat1f(float *, Mat1f, int, int);
 
 // Prorotype to clone a frame
-void cloneFrame(uchar **, uchar **, int, int, int = 3);
+void cloneFrame(uchar *, uchar *, int, int, int = 3);
 
 // Prorotype to create an empty frame
-void createFrame(uchar **, int, int, int = 3);
+void createFrame(uchar *, int, int, int = 3);
 
 // Prototype to get the luminance
-float *getLuminance(uchar **, int, int, int = 3, int = 0);
+float *getLuminance(uchar *, int, int, int = 3, int = 0);
 
 // Prototype for the motionImage
 float *getMotionImage(float *, float *, int, int);
 
 // Prototype for the optical flow
-void getOpticalFlow(uchar **, uchar **, OpticalVector *, int, int, int = 3, int = 0);
+void getOpticalFlow(uchar *, uchar *, OpticalVector *, int, int, int = 3, int = 0);
 
 // Prototype for the blur effect
-void blurFrame(uchar **, uchar **, OpticalVector *, int, int, int = 3, int = 0);
+void blurFrame(uchar *, uchar *, OpticalVector *, int, int, int = 3, int = 0);
 
 // Prototype for the interpolation of frame
-void interpolateFrames(uchar **, uchar **, uchar **, OpticalVector *, int, int, int, int = 0);
+void interpolateFrames(uchar *, uchar *, uchar *, OpticalVector *, int, int, int, int = 0);
 
 // Prototype for the print the progress
 void printProgressBar(int, int, timeval, timeval, int);
@@ -72,11 +72,8 @@ void writeInform(char *, int, int, int, int, timeval, timeval, int);
 // Prototype to export the generated frames
 void exportFrames(char *, int, Mat, Mat, OpticalVector *, int, int);
 
-// Prototype to free uchar matrix
-void freeUchar(uchar **, int = 3);
-
 // Prototype for the interpolation of video
-timeval interpolateVideo(VideoCapture, char *, char *, bool = false, int = 0);
+timeval interpolateVideo(VideoCapture, char *, char *, int = 0, bool = false, int = 0);
 
 int main(int argc, char **argv)
 {
@@ -90,21 +87,23 @@ int main(int argc, char **argv)
     // Declare the number of threads
     int nThreads;
     // Declare the variable to save the frames
+    int framesRend = 0;
     bool expFrames = false;
     // Declare the FILE to write the times
     FILE *fp;
     // Check if the number of arguments is correct
     if (argc < R_ARGS + 1)
     {
-        printf("Usage: ./MotionInterpolation <Path_to_files> <Load_video_name> <Save_video_name> <Export_frames ( 0:false, 1:true )> <nThreads>\n");
+        printf("Usage: ./MotionInterpolation <Path_to_files> <Load_video_name> <Save_video_name> <Frames to render (0 - all)> <Export_frames ( 0:false, 1:true )> <nThreads>\n");
         return -1;
     }
     // Get the paths
     path = argv[1];
     loadName = argv[2];
     saveName = argv[3];
-    expFrames = (atoi(argv[4]) == 0) ? false : true;
-    nThreads = atoi(argv[5]);
+    framesRend = atoi(argv[4]);
+    expFrames = (atoi(argv[5]) == 0) ? false : true;
+    nThreads = atoi(argv[6]);
 
     // Load the video from the path
     loadVideo = VideoCapture(std::string(path) + loadName);
@@ -117,7 +116,7 @@ int main(int argc, char **argv)
     }
 
     // Interpolate the video and get the runtime
-    runtime = interpolateVideo(loadVideo, path, saveName, expFrames, nThreads);
+    runtime = interpolateVideo(loadVideo, path, saveName, framesRend, expFrames, nThreads);
 
     // Imprimir informe
     printf("------------------------------------------------------------------------------\n");
@@ -137,27 +136,24 @@ int main(int argc, char **argv)
 }
 
 // Function to cast Mat to uchar*
-void matToUchar(Mat frame, uchar **uFrame, int width, int height, int channels)
+void matToUchar(Mat frame, uchar *uFrame, int width, int height, int channels)
 {
-    // Create multidimensional array for the three channels
-    for (int i = 0; i < channels; i++)
-        uFrame[i] = (uchar *)malloc(width * height * sizeof(uchar));
     // Make a copy of the values into the array of uchars
     for (int ch = 0; ch < channels; ch++)
         for (int i = 0; i < height; i++)
             for (int j = 0; j < width; j++)
-                uFrame[ch][i * width + j] = frame.at<Vec3b>(i, j)[ch];
+                uFrame[(ch * width * height) + (i * width + j)] = frame.at<Vec3b>(i, j)[ch];
 }
 
 // Function to cast uchar to Mat
-void ucharToMat(uchar **uFrame, Mat frame, int width, int height, int channels)
+void ucharToMat(uchar *uFrame, Mat frame, int width, int height, int channels)
 {
     // Create the Mat of 3 channels
     // TODO: Make it for n channels
     for (int ch = 0; ch < channels; ch++)
         for (int i = 0; i < height; i++)
             for (int j = 0; j < width; j++)
-                frame.at<Vec3b>(i, j)[ch] = uFrame[ch][i * width + j];
+                frame.at<Vec3b>(i, j)[ch] = uFrame[(ch * width * height) + (i * width + j)];
 }
 
 // Function to cast float* to Mat
@@ -169,28 +165,24 @@ void floatToMat1f(float *fFrame, Mat1f frame, int width, int height)
 }
 
 // Function to clone a frame
-void cloneFrame(uchar **originFrame, uchar **destFrame, int width, int height, int channels)
+void cloneFrame(uchar *originFrame, uchar *destFrame, int width, int height, int channels)
 {
     // Create multidimensional array for the N three channels
-    for (int i = 0; i < channels; i++)
-        destFrame[i] = (uchar *)malloc(width * height * sizeof(uchar));
     // Make a copy of the values into the array of uchars
     for (int ch = 0; ch < channels; ch++)
         for (int i = 0; i < height; i++)
             for (int j = 0; j < width; j++)
-                destFrame[ch][i * width + j] = originFrame[ch][i * width + j];
+                destFrame[(ch * width * height) + (i * width + j)] = originFrame[(ch * width * height) + (i * width + j)];
 }
 
 // Function to create an empty frame
-void createFrame(uchar **frame, int width, int height, int channels)
+void createFrame(uchar *frame, int width, int height, int channels)
 {
     // Create multidimensional array for the N three channels
-    for (int i = 0; i < channels; i++)
-        frame[i] = (uchar *)malloc(width * height * sizeof(uchar));
     for (int ch = 0; ch < channels; ch++)
         for (int i = 0; i < height; i++)
             for (int j = 0; j < width; j++)
-                frame[ch][i * width + j] = 0;
+                frame[(ch * width * height) + (i * width + j)] = 0;
 }
 
 // Function to get the motionImage
@@ -212,68 +204,8 @@ float *getMotionImage(float *lFrame1, float *lFrame2, int width, int height)
     return motionImage;
 }
 
-void blurFrame(uchar **frame, uchar **resFrame, OpticalVector *opticalFlow, int width, int height, int channels, int nThreads)
-{
-    static float kernel[9] =
-        {1 / 16.0, 1 / 8.0, 1 / 16.0,
-         1 / 8.0, 1 / 4.0, 1 / 8.0,
-         1 / 16.0, 1 / 8.0, 1 / 16.0};
-
-    static int kSize = (int)sqrt(my_sizeof(kernel) / my_sizeof(kernel[0]));
-
-    // Change the value of nThreads if is zero
-    if (nThreads <= 0)
-        nThreads = omp_get_num_procs();
-
-// Parallel the filter
-#pragma omp parallel num_threads(nThreads)
-    {
-        // Get the id of the thread
-        int thread_id = omp_get_thread_num();
-        // Get start and end pos
-        int startPos = (thread_id < (width * height) % nThreads) ? ((width * height) / nThreads) * thread_id + thread_id : ((width * height) / nThreads) * thread_id + (width * height) % nThreads;
-        int endPos = (thread_id < (width * height) % nThreads) ? startPos + ((width * height) / nThreads) : startPos + ((width * height) / nThreads) - 1;
-        int i = (startPos / width), j = (startPos % width);
-
-        // Float to store the convolution value
-        float conv[channels];
-        for (startPos; startPos <= endPos; startPos++)
-        {
-            if (abs(opticalFlow[i * width + j].x) + abs(opticalFlow[i * width + j].y) > FILTER_FLOW)
-            {
-                if (i > kSize && i < height - kSize && j > kSize && j < width - kSize)
-                {
-                    for (int ch = 0; ch < channels; ch++)
-                    {
-                        conv[ch] = 0.0;
-                        for (int i1 = 0; i1 < kSize; i1++)
-                        {
-                            for (int j1 = 0; j1 < kSize; j1++)
-                            {
-                                conv[ch] += kernel[i1 * kSize + j1] * frame[ch][(i + i1 - kSize / 2) * width + (j + j1 - kSize / 2)];
-                            }
-                        }
-                        // Check if the value is correct
-                        if (conv[ch] > 255)
-                            conv[ch] = 255;
-                        if (conv[ch] < 0)
-                            conv[ch] = 0;
-                        resFrame[ch][i * width + j] = (int)conv[ch];
-                    }
-                }
-            }
-            j += 1;
-            if (j == width)
-            {
-                i += 1;
-                j = 0;
-            }
-        }
-    }
-}
-
 // Function to get the luminance
-float *getLuminance(uchar **frame, int width, int height, int channels, int nThreads)
+float *getLuminance(uchar *frame, int width, int height, int channels, int nThreads)
 {
     // Declare the matrix to store the luminance
     float *lFrame = (float *)malloc(width * height * sizeof(float));
@@ -298,9 +230,9 @@ float *getLuminance(uchar **frame, int width, int height, int channels, int nThr
         for (startPos; startPos <= endPos; startPos++)
         {
             // Get the values from each pixel
-            fB = (float)frame[0][i * width + j] / 255.0;
-            fG = (float)frame[1][i * width + j] / 255.0;
-            fR = (float)frame[2][i * width + j] / 255.0;
+            fB = (float)frame[i * width + j] / 255.0;
+            fG = (float)frame[(width * height) + (i * width + j)] / 255.0;
+            fR = (float)frame[2 * (width * height) + (i * width + j)] / 255.0;
 
             lFrame[i * width + j] = 0.2987f * fR + 0.5870f * fG + 0.1140f * fB;
 
@@ -316,7 +248,7 @@ float *getLuminance(uchar **frame, int width, int height, int channels, int nThr
 }
 
 // Function to get the optical flow
-void getOpticalFlow(uchar **frame1, uchar **frame2, OpticalVector *optFlow, int width, int height, int channels, int nThreads)
+void getOpticalFlow(uchar *frame1, uchar *frame2, OpticalVector *optFlow, int width, int height, int channels, int nThreads)
 {
     // Change the value of nThreads if is zero
     if (nThreads <= 0)
@@ -424,15 +356,82 @@ void getOpticalFlow(uchar **frame1, uchar **frame2, OpticalVector *optFlow, int 
     free(motFrame);
 }
 
-void interpolateFrames(uchar **frame1, uchar **frame2, uchar **resFrame, OpticalVector *optFlow, int width, int height, int channels, int nThreads)
+// Function for the blur effect
+void blurFrame(uchar *frame, uchar *resFrame, OpticalVector *opticalFlow, int width, int height, int channels, int nThreads)
+{
+    static float kernel[9] =
+        {1 / 16.0, 1 / 8.0, 1 / 16.0,
+         1 / 8.0, 1 / 4.0, 1 / 8.0,
+         1 / 16.0, 1 / 8.0, 1 / 16.0};
+
+    static int kSize = (int)sqrt(my_sizeof(kernel) / my_sizeof(kernel[0]));
+
+    // Change the value of nThreads if is zero
+    if (nThreads <= 0)
+        nThreads = omp_get_num_procs();
+
+// Parallel the filter
+#pragma omp parallel num_threads(nThreads)
+    {
+        // Get the id of the thread
+        int thread_id = omp_get_thread_num();
+        // Get start and end pos
+        int startPos = (thread_id < (width * height) % nThreads) ? ((width * height) / nThreads) * thread_id + thread_id : ((width * height) / nThreads) * thread_id + (width * height) % nThreads;
+        int endPos = (thread_id < (width * height) % nThreads) ? startPos + ((width * height) / nThreads) : startPos + ((width * height) / nThreads) - 1;
+        int i = (startPos / width), j = (startPos % width);
+
+        // Float to store the convolution value
+        float conv[channels];
+        for (startPos; startPos <= endPos; startPos++)
+        {
+            if (abs(opticalFlow[i * width + j].x) + abs(opticalFlow[i * width + j].y) > FILTER_FLOW)
+            {
+                if (i > kSize && i < height - kSize && j > kSize && j < width - kSize)
+                {
+                    for (int ch = 0; ch < channels; ch++)
+                    {
+                        conv[ch] = 0.0;
+                        for (int i1 = 0; i1 < kSize; i1++)
+                        {
+                            for (int j1 = 0; j1 < kSize; j1++)
+                            {
+                                conv[ch] += kernel[i1 * kSize + j1] * frame[(ch * width * height) + ((i + i1 - kSize / 2) * width + (j + j1 - kSize / 2))];
+                            }
+                        }
+                        // Check if the value is correct
+                        if (conv[ch] > 255)
+                            conv[ch] = 255;
+                        if (conv[ch] < 0)
+                            conv[ch] = 0;
+                        resFrame[(ch * width * height) + (i * width + j)] = (int)conv[ch];
+                    }
+                }
+            }
+            j += 1;
+            if (j == width)
+            {
+                i += 1;
+                j = 0;
+            }
+        }
+    }
+}
+
+void interpolateFrames(uchar *frame1, uchar *frame2, uchar *resFrame, OpticalVector *optFlow, int width, int height, int channels, int nThreads)
 {
 
     // Declare the variable for the interpolation
     int linearDiv = 2;
     // Declare the Matrix for the intermediate frame
-    uchar *interFrame1[channels];
-    uchar *interFrame2[channels];
-    uchar *joinFrame[channels];
+    uchar *interFrame1 = (uchar *)malloc(width * height * channels * sizeof(uchar));
+    uchar *interFrame2 = (uchar *)malloc(width * height * channels * sizeof(uchar));
+    uchar *joinFrame = (uchar *)malloc(width * height * channels * sizeof(uchar));
+
+    if (interFrame1 == NULL || interFrame2 == NULL || joinFrame == NULL)
+    {
+        printf("Failed to allocate the inter frames \n");
+        exit(1);
+    }
 
     cloneFrame(frame1, interFrame1, width, height, channels);
     cloneFrame(frame2, interFrame2, width, height, channels);
@@ -457,9 +456,9 @@ void interpolateFrames(uchar **frame1, uchar **frame2, uchar **resFrame, Optical
                     int i1 = i + (int)(optFlow[i * width + j].y / linearDiv);
                     int j1 = j + (int)(optFlow[i * width + j].x) / linearDiv;
                     // Interpolate using the information of the frame 1
-                    interFrame1[ch][i1 * width + j] = frame1[ch][i * width + j];
+                    interFrame1[(ch * width * height) + (i1 * width + j1)] = frame1[(ch * width * height) + (i * width + j)];
                     // Interpolate using the information of the frame 2
-                    interFrame2[ch][i1 * width + j] = frame2[ch][i * width + j];
+                    interFrame2[(ch * width * height) + (i1 * width + j1)] = frame2[(ch * width * height) + (i * width + j)];
                 }
             }
     // Join frames into a result Frame
@@ -467,15 +466,15 @@ void interpolateFrames(uchar **frame1, uchar **frame2, uchar **resFrame, Optical
     for (int i = 0; i < height; i++)
         for (int j = 0; j < width; j++)
             for (int ch = 0; ch < channels; ch++)
-                joinFrame[ch][i * width + j] = (interFrame1[ch][i * width + j] + interFrame2[ch][i * width + j]) / 2;
+                joinFrame[(ch * width * height) + (i * width + j)] = (interFrame1[(ch * width * height) + (i * width + j)] + interFrame2[(ch * width * height) + (i * width + j)]) / 2;
     // Apply the blur filter over the join frame
     cloneFrame(joinFrame, resFrame, width, height, channels);
     blurFrame(joinFrame, resFrame, optFlow, width, height, channels, nThreads);
 
     // Free the memory
-    freeUchar(interFrame1);
-    freeUchar(interFrame2);
-    freeUchar(joinFrame);
+    free(interFrame1);
+    free(interFrame2);
+    free(joinFrame);
 }
 
 void printProgressBar(int iterFrame, int frameCount, timeval tval_result, timeval runtime, int nThreads)
@@ -554,16 +553,7 @@ void exportFrames(char *path, int iterFrame, Mat frame, Mat genFrame, OpticalVec
     }
 }
 
-// Function to free uchar matrix
-void freeUchar(uchar **frame, int channels)
-{
-    for (int ch = 0; ch < channels; ch++)
-    {
-        free(frame[ch]);
-    }
-}
-
-timeval interpolateVideo(VideoCapture loadVideo, char *path, char *saveName, bool expFrames, int nThreads)
+timeval interpolateVideo(VideoCapture loadVideo, char *path, char *saveName, int framesRend, bool expFrames, int nThreads)
 {
     // Declare the variables for time measurement
     struct timeval tval_before, tval_after, tval_result, runtime = (struct timeval){0};
@@ -572,7 +562,8 @@ timeval interpolateVideo(VideoCapture loadVideo, char *path, char *saveName, boo
     Mat oldFrame, newFrame, saveFrame;
 
     // Get the frame count, fps, width, height and number of channels
-    int frameCount = loadVideo.get(CAP_PROP_FRAME_COUNT), iterFrame = 0, fps = loadVideo.get(CAP_PROP_FPS);
+    int frameCount = framesRend == 0 ? loadVideo.get(CAP_PROP_FRAME_COUNT) - 1 : framesRend;
+    int iterFrame = 0, fps = loadVideo.get(CAP_PROP_FPS);
     int width = loadVideo.get(CAP_PROP_FRAME_WIDTH), height = loadVideo.get(CAP_PROP_FRAME_HEIGHT);
     int channels = 3;
 
@@ -604,15 +595,22 @@ timeval interpolateVideo(VideoCapture loadVideo, char *path, char *saveName, boo
             channels = newFrame.channels();
         }
 
-        else if (iterFrame > 0)
+        else if (iterFrame <= frameCount)
         {
             // Create uchar matrix for each frame
-            uchar *uFrameOld[channels];
-            uchar *uFrameNew[channels];
-            uchar *interFrame[channels];
+            uchar *uFrameOld = (uchar *)malloc(width * height * channels * sizeof(uchar));
+            uchar *uFrameNew = (uchar *)malloc(width * height * channels * sizeof(uchar));
+            uchar *interFrame = (uchar *)malloc(width * height * channels * sizeof(uchar));
+
+            if (uFrameOld == NULL || uFrameNew == NULL || interFrame == NULL)
+            {
+                printf("Failed to allocate the frames \n");
+                exit(1);
+            }
 
             // Load the data from the Mat to the uchar matrix
             matToUchar(oldFrame, uFrameOld, width, height, channels);
+
             matToUchar(newFrame, uFrameNew, width, height, channels);
             // Create the uchar matrix of the new frame
             createFrame(interFrame, width, height, channels);
@@ -656,9 +654,11 @@ timeval interpolateVideo(VideoCapture loadVideo, char *path, char *saveName, boo
 
             // Free memory
             free(optFlow);
-            freeUchar(uFrameOld);
-            freeUchar(uFrameNew);
-            freeUchar(interFrame);
+            free(uFrameOld);
+            free(uFrameNew);
+            free(interFrame);
+
+            saveFrame.release();
         }
         if (waitKey(25) >= 0)
         {

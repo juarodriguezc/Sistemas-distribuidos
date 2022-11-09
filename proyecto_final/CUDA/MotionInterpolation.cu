@@ -65,7 +65,7 @@ void blurFrame(uchar *, uchar *, OpticalVector *, int, int, int = 3, int = 0);
 void interpolateFrames(uchar *, uchar *, uchar *, OpticalVector *, int, int, int, int = 0);
 
 // Prototype for the print the progress
-void printProgressBar(int, int, timeval, timeval, int);
+void printProgressBar(int, int, timeval, timeval, int, int);
 
 // Prototype for the write the inform
 void writeInform(char *, int, int, int, int, timeval, timeval, int);
@@ -165,10 +165,43 @@ __global__ void getOpticalFlowCUDA(float *lFrame1, float *lFrame2, float *motFra
     }
 }
 
+__global__ void sharedGetOpticalFlowCUDA(int a)
+{
+    //extern __shared__ int lFr1[];
+    //int thread_id = threadIdx.x + blockIdx.x * blockDim.x;
+
+    // s[64] = 20;
+    // printf("Size of: %d \n", sizeof(s[0]));
+    __syncthreads();
+    /*
+    printf(" BlockId X: %d \n BlockId Y: %d \n Thread X: %d \n Thread Y: %d \n BlockDim X: %d \n BlockDim Y: %d \n ------------------ \n",
+           blockIdx.x, blockIdx.y, threadIdx.x, threadIdx.y, blockDim.x, blockDim.y);
+    */
+}
+
 int main(int argc, char **argv)
 {
+    /*
+    cudaError_t err = cudaSuccess;
+    printf("Hola mundo CPU \n");
+    printf("-------------- \n");
+
+    // Test Kernel TIling
+    testkernel<<<10, 10, 1920*1080>>>(4);
+
+    cudaDeviceSynchronize();
+
+    err = cudaGetLastError();
+
+    if (err != cudaSuccess)
+    {
+        fprintf(stderr, "Failed to launch getOpticalFlow kernel (error code %s)!\n", cudaGetErrorString(err));
+        exit(EXIT_FAILURE);
+    }
+    */
+    
     // Declare the variables for time measurement
-    struct timeval runtime;
+    struct timeval runtime = (struct timeval){0};
     // Declare the strings of load and save video
     char *path;
     char *loadName, *saveName;
@@ -197,6 +230,7 @@ int main(int argc, char **argv)
     nBlocks = atoi(argv[6]);
     nThreads = atoi(argv[7]);
 
+
     // Load the video from the path
     loadVideo = VideoCapture(std::string(path) + loadName);
 
@@ -224,6 +258,9 @@ int main(int argc, char **argv)
 
     fclose(fp);
     destroyAllWindows();
+
+    
+
     return 0;
 }
 
@@ -405,14 +442,13 @@ void getOpticalFlow(uchar *frame1, uchar *frame2, OpticalVector *optFlow, int wi
         exit(EXIT_FAILURE);
     }
 
-
     /*Variables necesarias para medir tiempos*/
     struct timeval tval_before, tval_after, tval_result;
 
     /*Medición de tiempo de inicio*/
     gettimeofday(&tval_before, NULL);
 
-    //getOpticalFlowCUDA<<<nBlocks, nThreads>>>(d_lFrame1, d_lFrame2, d_motFrame, d_optFlow, width, height, nBlocks * nThreads);
+    getOpticalFlowCUDA<<<nBlocks, nThreads>>>(d_lFrame1, d_lFrame2, d_motFrame, d_optFlow, width, height, nBlocks * nThreads);
 
     cudaDeviceSynchronize();
 
@@ -424,18 +460,16 @@ void getOpticalFlow(uchar *frame1, uchar *frame2, OpticalVector *optFlow, int wi
         exit(EXIT_FAILURE);
     }
 
-
-
     /*Medición de tiempo de finalización*/
     gettimeofday(&tval_after, NULL);
 
     /*Calcular los tiempos en tval_result*/
     timersub(&tval_after, &tval_before, &tval_result);
 
-    printf("Tiempo de ejecución: %ld.%06ld s \n", (long int)tval_result.tv_sec, (long int)tval_result.tv_usec);
+    //printf("Tiempo de ejecución: %ld.%06ld s \n", (long int)tval_result.tv_sec, (long int)tval_result.tv_usec);
 
     // Copy optFlow back to Host
-    err = cudaMemcpy(optFlow, d_optFlow, size * sizeof(struct OpticalVector) , cudaMemcpyDeviceToHost);
+    err = cudaMemcpy(optFlow, d_optFlow, size * sizeof(struct OpticalVector), cudaMemcpyDeviceToHost);
     if (err != cudaSuccess)
     {
         fprintf(stderr, "Failed to copy optFlow from device to host (error code %s)!\n", cudaGetErrorString(err));
@@ -573,7 +607,7 @@ void interpolateFrames(uchar *frame1, uchar *frame2, uchar *resFrame, OpticalVec
     free(joinFrame);
 }
 
-void printProgressBar(int iterFrame, int frameCount, timeval tval_result, timeval runtime, int nThreads)
+void printProgressBar(int iterFrame, int frameCount, timeval tval_result, timeval runtime, int nBlocks, int nThreads)
 {
     float progrss_100 = (int)((float)iterFrame / (float)frameCount * 100);
     float progress_20 = (int)((float)iterFrame / (float)frameCount * 20);
@@ -597,7 +631,7 @@ void printProgressBar(int iterFrame, int frameCount, timeval tval_result, timeva
               << "ET: ";
 
     printf("%ld.%06ld s     ", (long int)runtime.tv_sec, (long int)runtime.tv_usec);
-    printf("    ET/F: %ld.%06ld s       NThreads:  %d   \n \n", (long int)tval_result.tv_sec, (long int)tval_result.tv_usec, nThreads);
+    printf("    ET/F: %ld.%06ld s   NBlocks: %d     NThreads:  %d   \n \n", (long int)tval_result.tv_sec, (long int)tval_result.tv_usec, nBlocks, nThreads);
 }
 
 // Function to the write the inform
@@ -649,15 +683,6 @@ void exportFrames(char *path, int iterFrame, Mat frame, Mat genFrame, OpticalVec
     }
 }
 
-// Function to free uchar matrix
-void freeUchar(uchar **frame, int channels)
-{
-    for (int ch = 0; ch < channels; ch++)
-    {
-        free(frame[ch]);
-    }
-}
-
 timeval interpolateVideo(VideoCapture loadVideo, char *path, char *saveName, int framesRend, bool expFrames, int nBlocks, int nThreads)
 {
     // Declare the variables for time measurement
@@ -682,6 +707,7 @@ timeval interpolateVideo(VideoCapture loadVideo, char *path, char *saveName, int
     std::cout << "Video resolution: " << width << "px * " << height << "px" << std::endl;
     std::cout << "FPS: " << fps << std::endl;
     std::cout << "Total frames: " << frameCount << std::endl;
+    std::cout << "Number of blocks: " << nBlocks << std::endl;
     std::cout << "Number of Threads: " << nThreads << std::endl;
 
     std::cout << "------------------------------------------------------------------------" << std::endl;
@@ -738,7 +764,7 @@ timeval interpolateVideo(VideoCapture loadVideo, char *path, char *saveName, int
             saveVideo.write(newFrame);
 
             // Show the progress bar
-            printProgressBar(iterFrame, frameCount, tval_result, runtime, nThreads);
+            printProgressBar(iterFrame, frameCount, tval_result, runtime, nBlocks, nThreads);
 
             //  Write the files with the times
             writeInform(path, width, height, iterFrame, frameCount, tval_result, runtime, nThreads);
@@ -752,10 +778,12 @@ timeval interpolateVideo(VideoCapture loadVideo, char *path, char *saveName, int
             free(uFrameNew);
             free(interFrame);
         }
+        /*
         if (waitKey(25) >= 0)
         {
             break;
         }
+        */
         iterFrame += 1;
         newFrame.copyTo(oldFrame);
     }

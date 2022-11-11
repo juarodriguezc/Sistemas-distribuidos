@@ -15,8 +15,8 @@ if [ "$gpuInfo" = "-1" ]; then
 else
     echo "La GPU del sistema es compatible con CUDA"
 
-    mp=$(echo "$gpuInfo" | cut -d "_" -f 1)
-    cores=$(echo "$gpuInfo" | cut -d "_" -f 2)
+    mp=$((10#$(echo "$gpuInfo" | cut -d "_" -f 1)))
+    cores=$((10#$(echo "$gpuInfo" | cut -d "_" -f 2)))
     name=$(echo "$gpuInfo" | cut -d "_" -f 3)
 
 

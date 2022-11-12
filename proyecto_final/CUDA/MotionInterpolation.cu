@@ -254,7 +254,7 @@ int main(int argc, char **argv)
         printf("Error opening the file \n");
         exit(1);
     }
-    fprintf(fp, "%d,%d,%d,%ld.%06ld\n", (int)loadVideo.get(CAP_PROP_FRAME_WIDTH), (int)loadVideo.get(CAP_PROP_FRAME_HEIGHT), nThreads, (long int)runtime.tv_sec, (long int)runtime.tv_usec);
+    fprintf(fp, "%d,%d,%d,%d,%ld.%06ld\n", (int)loadVideo.get(CAP_PROP_FRAME_WIDTH), (int)loadVideo.get(CAP_PROP_FRAME_HEIGHT), nBlocks, nThreads, (long int)runtime.tv_sec, (long int)runtime.tv_usec);
 
     fclose(fp);
     destroyAllWindows();

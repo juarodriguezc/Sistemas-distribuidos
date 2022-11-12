@@ -1,7 +1,9 @@
 #!/bin/bash
 
 echo "------------------------------------------------"
-echo "          Sistemas distribuidos                 "
+echo "------------------------------------------------"
+echo "             Sistemas distribuidos              "
+echo "------------------------------------------------"
 echo "------------------------------------------------"
 echo ""
 
@@ -19,15 +21,7 @@ else
     cores=$((10#$(echo "$gpuInfo" | cut -d "_" -f 2)))
     name=$(echo "$gpuInfo" | cut -d "_" -f 3)
 
-
-    echo "GPU: $name"
-    echo "Se tienen $((mp)) multiprocesadores y $((cores)) cores por multiprocesador"
-    echo ""
-    echo "------------------------------------------------"
-
-
     cd ../
-
 
     echo "Verificando la ejecución de Cmake ..."
     #Check if cmake command has already been executed
@@ -37,19 +31,36 @@ else
     rm -rf "Makefile"
     rm -rf "CMakeFiles"
     cmake .
-    
     echo "Compilando el programa ..."
     make
     if [ $? -eq 0 ]; then
-      echo "Compilación terminada"
+      echo "✓ Compilación terminada"
+
+      echo "************************************************"
+      echo "GPU: $name"
+      echo "Se tienen $((mp)) multiprocesadores y $((cores)) cores por multiprocesador"
+      echo "************************************************"
+      echo ""
+
       echo "Ejecutando el programa ..."
-      for test in {1,4}
+      for test in {1,2,3,4}
       do
-        ./MotionInterpolation src/video/test"$test"/ test.mp4 result.avi 80 0 $((2*$mp)) $cores
+        for (( i=1; i<=((2*$mp)); i=i*2 ))
+        do
+          ./MotionInterpolation src/video/test"$test"/ test.mp4 result.avi 80 0 $i $cores
+          if [ $? -eq 0 ]; then
+            echo "✓ Interpolación de video realizada correctamente"
+          else
+              echo "Error en la ejecución del programa :("
+              exit 1
+          fi
+        done
       done
+    else
+      echo "Error en la compilación del programa :("
+      exit 1
     fi
-
-
 fi
+echo "------------------------------------------------"
 
 

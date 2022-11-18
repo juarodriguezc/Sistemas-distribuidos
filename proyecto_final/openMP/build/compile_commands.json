@@ -1,7 +1,0 @@
-[
-{
-  "directory": "/home/sebastian/Desktop/distribuidos/proyecto_final/openMP/build",
-  "command": "/usr/bin/g++  -isystem /usr/local/include/opencv4  -fopenmp -g -o CMakeFiles/MotionInterpolation.dir/MotionInterpolation.cpp.o -c /home/sebastian/Desktop/distribuidos/proyecto_final/openMP/MotionInterpolation.cpp",
-  "file": "/home/sebastian/Desktop/distribuidos/proyecto_final/openMP/MotionInterpolation.cpp"
-}
-]

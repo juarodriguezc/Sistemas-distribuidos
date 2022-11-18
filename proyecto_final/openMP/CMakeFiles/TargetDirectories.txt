@@ -1,3 +1,0 @@
-/home/sebastian/Desktop/distribuidos/proyecto_final/openMP/CMakeFiles/MotionInterpolation.dir
-/home/sebastian/Desktop/distribuidos/proyecto_final/openMP/CMakeFiles/edit_cache.dir
-/home/sebastian/Desktop/distribuidos/proyecto_final/openMP/CMakeFiles/rebuild_cache.dir

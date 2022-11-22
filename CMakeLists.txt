@@ -6,7 +6,6 @@ TARGET_LINK_LIBRARIES( MotionInterpolation ${OpenCV_LIBS} )
 
 find_package(OpenMP)
 
-# add_executable(...
 
 if(OpenMP_CXX_FOUND)
   target_link_libraries(${PROJECT_NAME}
@@ -14,3 +13,7 @@ if(OpenMP_CXX_FOUND)
     $<$<CONFIG:Release>:OpenMP::OpenMP_CXX> )
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fopenmp")
 endif()
+
+# MPI
+find_package(MPI REQUIRED)
+target_link_libraries(MotionInterpolation PUBLIC MPI::MPI_CXX)

@@ -8,12 +8,14 @@
 #include <stdio.h>
 #include <iostream>
 #include <sys/time.h>
+
 #include <omp.h>
+#include <mpi.h>
 
 #include <opencv2/opencv.hpp>
 
 // Set the number of arguments required
-#define R_ARGS 6
+#define R_ARGS 5
 // Set the precision of the motionImage
 #define MOTION_PRES 0.05f
 
@@ -49,13 +51,13 @@ void cloneFrame(uchar *, uchar *, int, int, int = 3);
 void createFrame(uchar *, int, int, int = 3);
 
 // Prototype to get the luminance
-float *getLuminance(uchar *, int, int, int = 3, int = 0);
+float *getLuminance(float *, uchar *, int, int, int = 3);
 
 // Prototype for the motionImage
-float *getMotionImage(float *, float *, int, int);
+float *getMotionImage(float *, float *, float *, int, int);
 
 // Prototype for the optical flow
-void getOpticalFlow(uchar *, uchar *, OpticalVector *, int, int, int = 3, int = 0);
+void getOpticalFlow(float *, float *, float *, OpticalVector *, int, int, int = 3, int = 0, int = 0);
 
 // Prototype for the blur effect
 void blurFrame(uchar *, uchar *, OpticalVector *, int, int, int = 3, int = 0);
@@ -73,7 +75,7 @@ void writeInform(char *, int, int, int, int, timeval, timeval, int);
 void exportFrames(char *, int, Mat, Mat, OpticalVector *, int, int);
 
 // Prototype for the interpolation of video
-timeval interpolateVideo(VideoCapture, char *, char *, int = 0, bool = false, int = 0);
+void interpolateVideo(char *, char *, char *, int = 0, bool = false);
 
 int main(int argc, char **argv)
 {
@@ -82,19 +84,14 @@ int main(int argc, char **argv)
     // Declare the strings of load and save video
     char *path;
     char *loadName, *saveName;
-    // Declare the Matrix to store the image
-    VideoCapture loadVideo, saveVideo;
-    // Declare the number of threads
-    int nThreads;
     // Declare the variable to save the frames
     int framesRend = 0;
     bool expFrames = false;
-    // Declare the FILE to write the times
-    FILE *fp;
+
     // Check if the number of arguments is correct
     if (argc < R_ARGS + 1)
     {
-        printf("Usage: ./MotionInterpolation <Path_to_files> <Load_video_name> <Save_video_name> <Frames to render (0 - all)> <Export_frames ( 0:false, 1:true )> <nThreads>\n");
+        printf("Usage: mpirun -np nProcess --hostfile mpi_hosts ./MotionInterpolation <Path_to_files> <Load_video_name> <Save_video_name> <Frames to render (0 - all)> <Export_frames ( 0:false, 1:true )> \n");
         return -1;
     }
     // Get the paths
@@ -103,35 +100,10 @@ int main(int argc, char **argv)
     saveName = argv[3];
     framesRend = atoi(argv[4]);
     expFrames = (atoi(argv[5]) == 0) ? false : true;
-    nThreads = atoi(argv[6]);
 
-    // Load the video from the path
-    loadVideo = VideoCapture(std::string(path) + loadName);
+    // Call the interpolate function
+    interpolateVideo(path, loadName, saveName, framesRend, expFrames);
 
-    // Check video opened successfully
-    if (!loadVideo.isOpened())
-    {
-        std::cout << "Error opening video stream or file" << std::endl;
-        return -1;
-    }
-
-    // Interpolate the video and get the runtime
-    runtime = interpolateVideo(loadVideo, path, saveName, framesRend, expFrames, nThreads);
-
-    // Imprimir informe
-    printf("------------------------------------------------------------------------------\n");
-    printf("Runtime: %ld.%06ld s \n", (long int)runtime.tv_sec, (long int)runtime.tv_usec);
-
-    fp = fopen((std::string(path) + "totalTime.csv").c_str(), "a");
-    if (fp == NULL)
-    {
-        printf("Error opening the file \n");
-        exit(1);
-    }
-    fprintf(fp, "%d,%d,%d,%ld.%06ld\n", (int)loadVideo.get(CAP_PROP_FRAME_WIDTH), (int)loadVideo.get(CAP_PROP_FRAME_HEIGHT), nThreads, (long int)runtime.tv_sec, (long int)runtime.tv_usec);
-
-    fclose(fp);
-    destroyAllWindows();
     return 0;
 }
 
@@ -186,10 +158,8 @@ void createFrame(uchar *frame, int width, int height, int channels)
 }
 
 // Function to get the motionImage
-float *getMotionImage(float *lFrame1, float *lFrame2, int width, int height)
+float *getMotionImage(float *motionImage, float *lFrame1, float *lFrame2, int width, int height)
 {
-    // Declare image for the result
-    float *motionImage = (float *)malloc(width * height * sizeof(float));
     // Declare the variable to store the luminance differences
     float fDiff = 0;
     // Substract the luminances
@@ -205,29 +175,16 @@ float *getMotionImage(float *lFrame1, float *lFrame2, int width, int height)
 }
 
 // Function to get the luminance
-float *getLuminance(uchar *frame, int width, int height, int channels, int nThreads)
+float *getLuminance(float *lFrame, uchar *frame, int width, int height, int channels)
 {
-    // Declare the matrix to store the luminance
-    float *lFrame = (float *)malloc(width * height * sizeof(float));
-    // Check the value of the threads
-    if (nThreads <= 0)
-        nThreads = omp_get_num_procs();
+    // Variables to store the results
+    float fB = 0.0f;
+    float fG = 0.0f;
+    float fR = 0.0f;
 
-#pragma omp parallel num_threads(nThreads)
+    for (int i = 0; i < height; i++)
     {
-        // Get the id of the thread
-        int thread_id = omp_get_thread_num();
-        // Get start and end pos
-        int startPos = (thread_id < (width * height) % nThreads) ? ((width * height) / nThreads) * thread_id + thread_id : ((width * height) / nThreads) * thread_id + (width * height) % nThreads;
-        int endPos = (thread_id < (width * height) % nThreads) ? startPos + ((width * height) / nThreads) : startPos + ((width * height) / nThreads) - 1;
-        int i = (startPos / width), j = (startPos % width);
-
-        // Variables to store the results
-        float fB = 0.0f;
-        float fG = 0.0f;
-        float fR = 0.0f;
-
-        for (startPos; startPos <= endPos; startPos++)
+        for (int j = 0; j < width; j++)
         {
             // Get the values from each pixel
             fB = (float)frame[i * width + j] / 255.0;
@@ -235,125 +192,98 @@ float *getLuminance(uchar *frame, int width, int height, int channels, int nThre
             fR = (float)frame[2 * (width * height) + (i * width + j)] / 255.0;
 
             lFrame[i * width + j] = 0.2987f * fR + 0.5870f * fG + 0.1140f * fB;
-
-            j += 1;
-            if (j == width)
-            {
-                i += 1;
-                j = 0;
-            }
         }
     }
     return lFrame;
 }
 
 // Function to get the optical flow
-void getOpticalFlow(uchar *frame1, uchar *frame2, OpticalVector *optFlow, int width, int height, int channels, int nThreads)
+void getOpticalFlow(float *lFrame1, float *lFrame2, float *motFrame, OpticalVector *optFlow, int width, int height, int channels, int processId, int nProcess)
 {
-    // Change the value of nThreads if is zero
-    if (nThreads <= 0)
-        nThreads = omp_get_num_procs();
+    // Get start and end pos
+    int startPos = (processId < (width * height) % nProcess) ? ((width * height) / nProcess) * processId + processId : ((width * height) / nProcess) * processId + (width * height) % nProcess;
+    int endPos = (processId < (width * height) % nProcess) ? startPos + ((width * height) / nProcess) : startPos + ((width * height) / nProcess) - 1;
 
-    // Get the luminance of the two frames
-    float *lFrame1 = getLuminance(frame1, width, height, channels, nThreads);
-    float *lFrame2 = getLuminance(frame2, width, height, channels, nThreads);
+    int i = (startPos / width), j = (startPos % width);
+    // Declare the variables for the optical flow
+    float fPatchDifferenceMax = INFINITY;
+    float fPatchDifferenceX = 0.0f, fPatchDifferenceY = 0.0f;
+    int searchVectorX = 0, searchVectorY = 0;
+    float fAccumDif = 0.0f;
+    int patchPixelX = 0, patchPixelY = 0;
+    int basePixelX = 0, basePixelY = 0;
+    float fPatchPixel = 0.0f, fBasePixel = 0.0f;
 
-    // Get the motionFrame of the frames
-    float *motFrame = getMotionImage(lFrame1, lFrame2, width, height);
-
-#pragma omp parallel num_threads(nThreads)
+    // Iterate over each pixel of the image
+    for (startPos; startPos <= endPos; startPos++)
     {
-        // Get the id of the thread
-        int thread_id = omp_get_thread_num();
-        // Get start and end pos
-        int startPos = (thread_id < (width * height) % nThreads) ? ((width * height) / nThreads) * thread_id + thread_id : ((width * height) / nThreads) * thread_id + (width * height) % nThreads;
-        int endPos = (thread_id < (width * height) % nThreads) ? startPos + ((width * height) / nThreads) : startPos + ((width * height) / nThreads) - 1;
-
-        int i = (startPos / width), j = (startPos % width);
-        // Declare the variables for the optical flow
-        float fPatchDifferenceMax = INFINITY;
-        float fPatchDifferenceX = 0.0f, fPatchDifferenceY = 0.0f;
-        int searchVectorX = 0, searchVectorY = 0;
-        float fAccumDif = 0.0f;
-        int patchPixelX = 0, patchPixelY = 0;
-        int basePixelX = 0, basePixelY = 0;
-        float fPatchPixel = 0.0f, fBasePixel = 0.0f;
-
-        // Iterate over each pixel of the image
-        for (startPos; startPos <= endPos; startPos++)
+        // Initialize the vector
+        optFlow[i * width + j].x = 0;
+        optFlow[i * width + j].y = 0;
+        if (motFrame[i * width + j] > 0)
         {
-            // Initialize the vector
-            optFlow[i * width + j].x = 0;
-            optFlow[i * width + j].y = 0;
-            if (motFrame[i * width + j] > 0)
+            // Initialize the variables
+            fPatchDifferenceMax = INFINITY;
+            fPatchDifferenceX = 0.0f;
+            fPatchDifferenceY = 0.0f;
+
+            // Search over a rectangular area for a patch of the image
+            //  Sx and Sy indicates the area of search
+            for (int sy = 0; sy < SEARCH_SIZE; sy++)
             {
-                // Initialize the variables
-                fPatchDifferenceMax = INFINITY;
-                fPatchDifferenceX = 0.0f;
-                fPatchDifferenceY = 0.0f;
-
-                // Search over a rectangular area for a patch of the image
-                //  Sx and Sy indicates the area of search
-                for (int sy = 0; sy < SEARCH_SIZE; sy++)
+                for (int sx = 0; sx < SEARCH_SIZE; sx++)
                 {
-                    for (int sx = 0; sx < SEARCH_SIZE; sx++)
+                    // vectors that iterate over the search square
+                    searchVectorX = j + (sx - SEARCH_SIZE / 2);
+                    searchVectorY = i + (sy - SEARCH_SIZE / 2);
+
+                    // Variable to store the difference of the patch
+                    fAccumDif = 0.0f;
+
+                    // Iterate over the patch with px and py
+                    for (int py = 0; py < PATCH_SIZE; py++)
                     {
-                        // vectors that iterate over the search square
-                        searchVectorX = j + (sx - SEARCH_SIZE / 2);
-                        searchVectorY = i + (sy - SEARCH_SIZE / 2);
-
-                        // Variable to store the difference of the patch
-                        fAccumDif = 0.0f;
-
-                        // Iterate over the patch with px and py
-                        for (int py = 0; py < PATCH_SIZE; py++)
+                        for (int px = 0; px < PATCH_SIZE; px++)
                         {
-                            for (int px = 0; px < PATCH_SIZE; px++)
-                            {
-                                // Iterate over the patch
-                                patchPixelX = searchVectorX + (px - PATCH_SIZE / 2);
-                                patchPixelY = searchVectorY + (py - PATCH_SIZE / 2);
+                            // Iterate over the patch
+                            patchPixelX = searchVectorX + (px - PATCH_SIZE / 2);
+                            patchPixelY = searchVectorY + (py - PATCH_SIZE / 2);
 
-                                // Iterate over the patch of the original pixel
-                                basePixelX = j + (px - PATCH_SIZE / 2);
-                                basePixelY = i + (py - PATCH_SIZE / 2);
+                            // Iterate over the patch of the original pixel
+                            basePixelX = j + (px - PATCH_SIZE / 2);
+                            basePixelY = i + (py - PATCH_SIZE / 2);
 
-                                // Get adjacent values for each patch checking that is inside the image
-                                fPatchPixel = 0.0f;
-                                fBasePixel = 0.0f;
-                                if (patchPixelX >= 0 && patchPixelX < width && patchPixelY >= 0 && patchPixelY < height)
-                                    fPatchPixel = lFrame2[patchPixelY * width + patchPixelX];
+                            // Get adjacent values for each patch checking that is inside the image
+                            fPatchPixel = 0.0f;
+                            fBasePixel = 0.0f;
+                            if (patchPixelX >= 0 && patchPixelX < width && patchPixelY >= 0 && patchPixelY < height)
+                                fPatchPixel = lFrame2[patchPixelY * width + patchPixelX];
 
-                                if (basePixelX >= 0 && basePixelX < width && basePixelY >= 0 && basePixelY < height)
-                                    fBasePixel = lFrame1[basePixelY * width + basePixelX];
+                            if (basePixelX >= 0 && basePixelX < width && basePixelY >= 0 && basePixelY < height)
+                                fBasePixel = lFrame1[basePixelY * width + basePixelX];
 
-                                // Accumulate difference
-                                fAccumDif += fabs(fPatchPixel - fBasePixel);
-                            }
+                            // Accumulate difference
+                            fAccumDif += fabs(fPatchPixel - fBasePixel);
                         }
+                    }
 
-                        // Record the vector offset for the least different search patch
-                        if (fAccumDif <= fPatchDifferenceMax)
-                        {
-                            fPatchDifferenceMax = fAccumDif;
-                            optFlow[i * width + j].x = searchVectorX - j;
-                            optFlow[i * width + j].y = searchVectorY - i;
-                        }
+                    // Record the vector offset for the least different search patch
+                    if (fAccumDif <= fPatchDifferenceMax)
+                    {
+                        fPatchDifferenceMax = fAccumDif;
+                        optFlow[i * width + j].x = searchVectorX - j;
+                        optFlow[i * width + j].y = searchVectorY - i;
                     }
                 }
             }
-            j += 1;
-            if (j == width)
-            {
-                i += 1;
-                j = 0;
-            }
+        }
+        j += 1;
+        if (j == width)
+        {
+            i += 1;
+            j = 0;
         }
     }
-    // Free the memory
-    free(lFrame1);
-    free(lFrame2);
-    free(motFrame);
 }
 
 // Function for the blur effect
@@ -442,7 +372,7 @@ void interpolateFrames(uchar *frame1, uchar *frame2, uchar *resFrame, OpticalVec
         nThreads = omp_get_num_procs();
 
     // Get the Optical Flow
-    getOpticalFlow(frame1, frame2, optFlow, width, height, channels, nThreads);
+    // getOpticalFlow(frame1, frame2, optFlow, width, height, channels, nThreads);
 
     // Create the new frame interpolating the optical Flow
     for (int i = 0; i < height; i++)
@@ -553,10 +483,184 @@ void exportFrames(char *path, int iterFrame, Mat frame, Mat genFrame, OpticalVec
     }
 }
 
-timeval interpolateVideo(VideoCapture loadVideo, char *path, char *saveName, int framesRend, bool expFrames, int nThreads)
+void interpolateVideo(char *path, char *loadName, char *saveName, int framesRend, bool expFrames)
 {
     // Declare the variables for time measurement
-    struct timeval tval_before, tval_after, tval_result, runtime = (struct timeval){0};
+    double runtime = 0.0, processTime = 0.0, timeStart = 0.0, timeEnd = 0.0;
+    // Declare the number of process and id
+    int nProcess, processId;
+    // Declare variables for the frame count, fps, width, height and number of channels
+    int frameCount = 0, iterFrame = 0, fps = 0;
+    int width = 0, height = 0, channels = 3;
+    // Declare the variables for the frames
+    Mat oldFrame, newFrame, saveFrame;
+    // Declare the Matrix to store the image
+    VideoCapture loadVideo;
+
+    MPI_Init(NULL, NULL);
+    MPI_Comm_size(MPI_COMM_WORLD, &nProcess);
+    MPI_Comm_rank(MPI_COMM_WORLD, &processId);
+
+    /* create a type for struct car */
+    const int nitems = 2;
+    int blocklengths[2] = {1, 1};
+    MPI_Datatype types[2] = {MPI_INT, MPI_INT};
+    MPI_Datatype mpi_car_type;
+    MPI_Aint offsets[2];
+
+    offsets[0] = offsetof(OpticalVector, x);
+    offsets[1] = offsetof(OpticalVector, y);
+
+    MPI_Type_create_struct(nitems, blocklengths, offsets, types, &mpi_car_type);
+    MPI_Type_commit(&mpi_car_type);
+
+    // Load the video and share the parameters to the other processes
+    if (processId == 0)
+    {
+        // Load the video from the path
+        loadVideo = VideoCapture(std::string(path) + loadName);
+        // Get the video properties
+        frameCount = framesRend == 0 ? loadVideo.get(CAP_PROP_FRAME_COUNT) - 1 : framesRend;
+        fps = loadVideo.get(CAP_PROP_FPS);
+        width = loadVideo.get(CAP_PROP_FRAME_WIDTH), height = loadVideo.get(CAP_PROP_FRAME_HEIGHT);
+        // Print the properties
+        std::cout << "------------------------------------------------------------------------" << std::endl;
+        std::cout << "                          Motion interpolation                          " << std::endl;
+        std::cout << "------------------------------------------------------------------------" << std::endl;
+
+        std::cout << "Video resolution: " << width << "px * " << height << "px" << std::endl;
+        std::cout << "FPS: " << fps << std::endl;
+        std::cout << "Total frames: " << frameCount << std::endl;
+        std::cout << "Number of Process: " << nProcess << std::endl;
+
+        std::cout << "------------------------------------------------------------------------" << std::endl;
+    }
+    // Put a battier to wait the video loading
+    MPI_Barrier(MPI_COMM_WORLD);
+
+    // Broadcasat the video parameters
+    MPI_Bcast(&frameCount, 1, MPI_INT, 0, MPI_COMM_WORLD);
+    MPI_Bcast(&fps, 1, MPI_INT, 0, MPI_COMM_WORLD);
+    MPI_Bcast(&width, 1, MPI_INT, 0, MPI_COMM_WORLD);
+    MPI_Bcast(&height, 1, MPI_INT, 0, MPI_COMM_WORLD);
+
+    std::cout << "AFTER - Process: " << processId << " / " << nProcess << "  frameCount: " << frameCount << " width: " << width << " height: " << height << " fps: " << fps << std::endl;
+
+    // Declare the video Writer
+    VideoWriter saveVideo(std::string(path) + saveName, VideoWriter::fourcc('M', 'J', 'P', 'G'), 2 * fps, Size(width, height));
+
+    // Put a battier to wait the video saving
+    MPI_Barrier(MPI_COMM_WORLD);
+
+    // Iterate over the number of frames
+    while (iterFrame < frameCount)
+    {
+        // Declare boolean to check if frame exists
+        int frameExists = 0;
+        // Declare the variables to store the uchar frames
+        uchar *uFrameOld = (uchar *)malloc(width * height * channels * sizeof(uchar));
+        uchar *uFrameNew = (uchar *)malloc(width * height * channels * sizeof(uchar));
+        uchar *interFrame = (uchar *)malloc(width * height * channels * sizeof(uchar));
+
+        // Check correct allocation
+        if (uFrameOld == NULL || uFrameNew == NULL || interFrame == NULL)
+        {
+            printf("Failed to allocate the frames \n");
+            exit(1);
+        }
+
+        // Declare the float array for the luminance
+        float *lFrame1 = (float *)malloc(width * height * sizeof(float));
+        float *lFrame2 = (float *)malloc(width * height * sizeof(float));
+
+        // Declare the float array for the motion
+        float *motFrame = (float *)malloc(width * height * sizeof(float));
+
+        // Check correct allocation
+        if (lFrame1 == NULL || lFrame2 == NULL || lFrame2 == NULL)
+        {
+            printf("Failed to allocate the luminance frames \n");
+            exit(1);
+        }
+
+        // Declare the mat to save the frame
+        Mat saveFrame;
+
+        // Declare the array for the optical flow
+        struct OpticalVector *optFlow = (OpticalVector *)malloc(width * height * sizeof(struct OpticalVector));
+
+        if (optFlow == NULL)
+        {
+            printf("Failed to allocate the opticalFlow matrix \n");
+            exit(1);
+        }
+
+        // Check if the new Frame exists
+        if (processId == 0)
+            frameExists = (loadVideo.read(newFrame)) ? 1 : 0;
+
+        // Put a barrier to broadcast the bool of the existence
+        MPI_Barrier(MPI_COMM_WORLD);
+        MPI_Bcast(&frameExists, 1, MPI_INT, 0, MPI_COMM_WORLD);
+
+        // Write the first frame or calculate the luminances in the process 0
+        if (processId == 0)
+        {
+            std::cout << "Frame " << iterFrame << std::endl;
+            if (frameExists != 0)
+            {
+                if (iterFrame == 0)
+                    saveVideo.write(newFrame);
+                else
+                {
+                    // Load the data from the Mat to the uchar matrix
+                    matToUchar(oldFrame, uFrameOld, width, height, channels);
+                    matToUchar(newFrame, uFrameNew, width, height, channels);
+
+                    // Get the luminances of eeach frame
+                    getLuminance(lFrame1, uFrameOld, width, height, channels);
+                    getLuminance(lFrame2, uFrameNew, width, height, channels);
+
+                    // Get the motionFrame of the frames
+                    getMotionImage(motFrame, lFrame1, lFrame2, width, height);
+                }
+                newFrame.copyTo(oldFrame);
+            }
+        }
+
+        // Put a barrier to broadcast the luminances and the motion frame
+        MPI_Barrier(MPI_COMM_WORLD);
+
+        // Broadcasat the variables
+        MPI_Bcast(lFrame1, width * height, MPI_FLOAT, 0, MPI_COMM_WORLD);
+        MPI_Bcast(lFrame2, width * height, MPI_FLOAT, 0, MPI_COMM_WORLD);
+        MPI_Bcast(motFrame, width * height, MPI_FLOAT, 0, MPI_COMM_WORLD);
+
+        // Calculate the optical flow
+        getOpticalFlow(lFrame1, lFrame2, motFrame, optFlow, width, height, channels, processId, nProcess);
+
+        // Barrier to wait all the results
+        MPI_Barrier(MPI_COMM_WORLD);
+
+        // Gather the results
+        MPI_Gather(optFlow, width * height, MPI_INT, rMatR, sizeMat, MPI_INT, 0, MPI_COMM_WORLD);
+
+        // Release the memory of the luminances and motion images
+        free(lFrame1);
+        free(lFrame2);
+        free(motFrame);
+        //
+        free(uFrameOld);
+        free(uFrameNew);
+        free(interFrame);
+
+        iterFrame++;
+    }
+
+    MPI_Finalize();
+
+    /*
+    //struct timeval tval_before, tval_after, tval_result, runtime = (struct timeval){0};
 
     // Declare the variables for the frames
     Mat oldFrame, newFrame, saveFrame;
@@ -573,17 +677,7 @@ timeval interpolateVideo(VideoCapture loadVideo, char *path, char *saveName, int
     if (nThreads <= 0)
         nThreads = omp_get_num_procs();
 
-    // Print the video information
-    std::cout << "------------------------------------------------------------------------" << std::endl;
-    std::cout << "                          Motion interpolation                          " << std::endl;
-    std::cout << "------------------------------------------------------------------------" << std::endl;
 
-    std::cout << "Video resolution: " << width << "px * " << height << "px" << std::endl;
-    std::cout << "FPS: " << fps << std::endl;
-    std::cout << "Total frames: " << frameCount << std::endl;
-    std::cout << "Number of Threads: " << nThreads << std::endl;
-
-    std::cout << "------------------------------------------------------------------------" << std::endl;
 
     while (loadVideo.read(newFrame))
     {
@@ -670,4 +764,5 @@ timeval interpolateVideo(VideoCapture loadVideo, char *path, char *saveName, int
 
     saveVideo.release();
     return runtime;
+    */
 }

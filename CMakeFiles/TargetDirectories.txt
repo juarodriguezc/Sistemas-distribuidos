@@ -1,3 +1,0 @@
-/home/sebastian/Desktop/SistemasDistribuidos/distribuidos/CMakeFiles/MotionInterpolation.dir
-/home/sebastian/Desktop/SistemasDistribuidos/distribuidos/CMakeFiles/edit_cache.dir
-/home/sebastian/Desktop/SistemasDistribuidos/distribuidos/CMakeFiles/rebuild_cache.dir

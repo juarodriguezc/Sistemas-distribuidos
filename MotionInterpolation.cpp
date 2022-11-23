@@ -516,7 +516,10 @@ void interpolateVideo(char *path, char *loadName, char *saveName, int framesRend
     MPI_Bcast(&height, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
     // Declare the video Writer
-    VideoWriter saveVideo(std::string(path) + saveName, VideoWriter::fourcc('M', 'J', 'P', 'G'), 2 * fps, Size(width, height));
+    VideoWriter saveVideo;
+    if(processId == 0){
+        VideoWriter saveVideo(std::string(path) + saveName, VideoWriter::fourcc('M', 'J', 'P', 'G'), 2 * fps, Size(width, height));
+    }
 
     // Put a battier to wait the video saving
     MPI_Barrier(MPI_COMM_WORLD);

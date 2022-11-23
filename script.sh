@@ -8,4 +8,4 @@ do
     #mpirun -np $i --hostfile mpi_hosts ./MotionInterpolation /src/video/test"$test"/ test.mp4 result.avi 80 0
   done
 done
-mpirun -np 4 --hostfile mpi_hosts ./MotionInterpolation /src/video/test4/ test.mp4 result.avi 80 0
+mpirun -np 4 --hostfile mpi_hosts ./MotionInterpolation src/video/test4/ test.mp4 result.avi 80 0

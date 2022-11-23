@@ -680,7 +680,7 @@ void interpolateVideo(char *path, char *loadName, char *saveName, int framesRend
                     printProgressBar(iterFrame, frameCount, clusterTime, totalTime, nProcess);
 
                     // Write the files with the times
-                    //writeInform(path, width, height, iterFrame, frameCount, clusterTime, totalTime, nProcess);
+                    writeInform(path, width, height, iterFrame, frameCount, clusterTime, totalTime, nProcess);
 
                     // Export the frames if is required
                     if (expFrames)

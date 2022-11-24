@@ -519,7 +519,7 @@ void interpolateVideo(char *path, char *loadName, char *saveName, int framesRend
     VideoWriter saveVideo;
     if (processId == 0)
     {
-        VideoWriter saveVideo(std::string(path) + saveName, VideoWriter::fourcc('M', 'J', 'P', 'G'), 2 * fps, Size(width, height));
+        saveVideo = VideoWriter(std::string(path) + saveName, VideoWriter::fourcc('M', 'J', 'P', 'G'), 2 * fps, Size(width, height));
     }
 
     // Put a battier to wait the video saving

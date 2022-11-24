@@ -517,7 +517,8 @@ void interpolateVideo(char *path, char *loadName, char *saveName, int framesRend
 
     // Declare the video Writer
     VideoWriter saveVideo;
-    if(processId == 0){
+    if (processId == 0)
+    {
         VideoWriter saveVideo(std::string(path) + saveName, VideoWriter::fourcc('M', 'J', 'P', 'G'), 2 * fps, Size(width, height));
     }
 
@@ -527,6 +528,10 @@ void interpolateVideo(char *path, char *loadName, char *saveName, int framesRend
     // Iterate over the number of frames
     while (iterFrame <= frameCount)
     {
+        // Initialize the time
+        processTime = 0.0;
+        clusterTime = 0.0;
+
         // Declare boolean to check if frame exists
         int frameExists = 0;
         // Declare the variables to store the uchar frames
@@ -563,8 +568,6 @@ void interpolateVideo(char *path, char *loadName, char *saveName, int framesRend
             }
             else
             {
-                // Measure start time
-                timeStart = MPI_Wtime();
                 // Declare the float array for the luminance
                 float *lFrame1 = (float *)malloc(width * height * sizeof(float));
                 float *lFrame2 = (float *)malloc(width * height * sizeof(float));
@@ -595,6 +598,9 @@ void interpolateVideo(char *path, char *loadName, char *saveName, int framesRend
                     exit(1);
                 }
 
+                // Measure start time
+                timeStart = MPI_Wtime();
+
                 // Write the first frame or calculate the luminances in the process 0
                 if (processId == 0)
                 {
@@ -613,6 +619,10 @@ void interpolateVideo(char *path, char *loadName, char *saveName, int framesRend
                     newFrame.copyTo(oldFrame);
                 }
 
+                // Measure end time
+                timeEnd = MPI_Wtime();
+                processTime += fabs(timeEnd - timeStart);
+
                 // Put a barrier to broadcast the luminances and the motion frame
                 MPI_Barrier(MPI_COMM_WORLD);
 
@@ -621,8 +631,15 @@ void interpolateVideo(char *path, char *loadName, char *saveName, int framesRend
                 MPI_Bcast(lFrame2, width * height, MPI_FLOAT, 0, MPI_COMM_WORLD);
                 MPI_Bcast(motFrame, width * height, MPI_FLOAT, 0, MPI_COMM_WORLD);
 
+                // Measure start time
+                timeStart = MPI_Wtime();
+
                 // Calculate the optical flow
                 getOpticalFlow(lFrame1, lFrame2, motFrame, optFlow, width, height, channels, startPos, endPos);
+
+                // Measure end time
+                timeEnd = MPI_Wtime();
+                processTime += fabs(timeEnd - timeStart);
 
                 // Barrier to wait all the results of the optical flow
                 MPI_Barrier(MPI_COMM_WORLD);
@@ -632,10 +649,6 @@ void interpolateVideo(char *path, char *loadName, char *saveName, int framesRend
 
                 // Wait until the gather is done
                 MPI_Barrier(MPI_COMM_WORLD);
-
-                // Measure end time
-                timeEnd = MPI_Wtime();
-                processTime = fabs(timeEnd - timeStart);
 
                 MPI_Reduce(&processTime, &clusterTime, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
 
@@ -678,7 +691,6 @@ void interpolateVideo(char *path, char *loadName, char *saveName, int framesRend
 
                     // Show the progress bar
                     printProgressBar(iterFrame, frameCount, clusterTime, totalTime, nProcess);
-
 
                     // Write the files with the times
                     writeInform(path, width, height, iterFrame, frameCount, clusterTime, totalTime, nProcess);

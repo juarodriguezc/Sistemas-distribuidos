@@ -5,6 +5,6 @@ do
   for (( i=1; i<=(16); i=i*2 ))
   do
     echo " Test #$test  -  #Process: $i: "
-    mpirun -np $i --hostfile mpi_hosts ./MotionInterpolation /home/"$USER"/Sistemas-distribuidos/src/video/test"$test"/ test.mp4 result.avi 80 0
+    mpirun -np $i --hostfile mpi_hosts ./MotionInterpolation /home/"$USER"/Sistemas-distribuidos/src/video/test"$test"/ test.mp4 result.avi 25 0
   done
 done

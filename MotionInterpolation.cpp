@@ -15,7 +15,7 @@
 #include <opencv2/opencv.hpp>
 
 // Set the number of arguments required
-#define R_ARGS 5
+#define R_ARGS 6
 // Set the precision of the motionImage
 #define MOTION_PRES 0.05f
 
@@ -57,7 +57,7 @@ float *getLuminance(float *, uchar *, int, int, int = 3);
 float *getMotionImage(float *, float *, float *, int, int);
 
 // Prototype for the optical flow
-void getOpticalFlow(float *, float *, float *, OpticalVector *, int, int, int = 3, int = 0, int = 0);
+void getOpticalFlow(float *, float *, float *, OpticalVector *, int, int, int = 3, int = 0, int = 0, int = 0);
 
 // Prototype for the blur effect
 void blurFrame(uchar *, uchar *, OpticalVector *, int, int, int = 3);
@@ -66,16 +66,16 @@ void blurFrame(uchar *, uchar *, OpticalVector *, int, int, int = 3);
 void interpolateFrames(uchar *, uchar *, uchar *, OpticalVector *, int, int, int);
 
 // Prototype for the print the progress
-void printProgressBar(int, int, double, double, int);
+void printProgressBar(int, int, double, double, int, int);
 
 // Prototype for the write the inform
-void writeInform(char *, int, int, int, int, double, double, int);
+void writeInform(char *, int, int, int, int, double, double, int, int);
 
 // Prototype to export the generated frames
 void exportFrames(char *, int, Mat, Mat, OpticalVector *, int, int);
 
 // Prototype for the interpolation of video
-void interpolateVideo(char *, char *, char *, int = 0, bool = false);
+void interpolateVideo(char *, char *, char *, int = 0, bool = false, int = 0);
 
 int main(int argc, char **argv)
 {
@@ -88,10 +88,13 @@ int main(int argc, char **argv)
     int framesRend = 0;
     bool expFrames = false;
 
+    // Declare the variable for the number of Threads
+    int nThreads = 0;
+
     // Check if the number of arguments is correct
     if (argc < R_ARGS + 1)
     {
-        printf("Usage: mpirun -np nProcess --hostfile mpi_hosts ./MotionInterpolation <Path_to_files> <Load_video_name> <Save_video_name> <Frames to render (0 - all)> <Export_frames ( 0:false, 1:true )> \n");
+        printf("Usage: mpirun -np nProcess --hostfile mpi_hosts ./MotionInterpolation <Path_to_files> <Load_video_name> <Save_video_name> <Frames to render (0 - all)> <Export_frames ( 0:false, 1:true )> <nThreads ( 0:auto )> \n");
         return -1;
     }
     // Get the paths
@@ -100,9 +103,11 @@ int main(int argc, char **argv)
     saveName = argv[3];
     framesRend = atoi(argv[4]);
     expFrames = (atoi(argv[5]) == 0) ? false : true;
+    nThreads = atoi(argv[6]);
+    nThreads = nThreads < 0 ? 0 : nThreads;
 
     // Call the interpolate function
-    interpolateVideo(path, loadName, saveName, framesRend, expFrames);
+    interpolateVideo(path, loadName, saveName, framesRend, expFrames, nThreads);
 
     return 0;
 }
@@ -198,88 +203,102 @@ float *getLuminance(float *lFrame, uchar *frame, int width, int height, int chan
 }
 
 // Function to get the optical flow
-void getOpticalFlow(float *lFrame1, float *lFrame2, float *motFrame, OpticalVector *optFlow, int width, int height, int channels, int startPos, int endPos)
+void getOpticalFlow(float *lFrame1, float *lFrame2, float *motFrame, OpticalVector *optFlow, int width, int height, int channels, int startPos, int endPos, int nThreads)
 {
-    // Calculate the positions in terms of i and j
-    int i = (startPos / width), j = (startPos % width);
-    // Declare the variables for the optical flow
-    float fPatchDifferenceMax = INFINITY;
-    float fPatchDifferenceX = 0.0f, fPatchDifferenceY = 0.0f;
-    int searchVectorX = 0, searchVectorY = 0;
-    float fAccumDif = 0.0f;
-    int patchPixelX = 0, patchPixelY = 0;
-    int basePixelX = 0, basePixelY = 0;
-    float fPatchPixel = 0.0f, fBasePixel = 0.0f;
+    if (nThreads <= 0)
+        nThreads = omp_get_num_procs();
 
-    // Iterate over each pixel of the image
-    for (int iter = 0; startPos <= endPos; startPos++)
+    #pragma omp parallel num_threads(nThreads)
     {
-        // Initialize the vector
-        optFlow[iter].x = 0;
-        optFlow[iter].y = 0;
-        if (motFrame[i * width + j] > 0)
+        // Get the id of the thread
+        int thread_id = omp_get_thread_num();
+        int nPixels = abs(endPos - startPos + 1);
+
+        // Get start and end pos based on nPixels
+        int sPos = (thread_id < nPixels % nThreads) ? startPos + (nPixels / nThreads) * thread_id + thread_id : startPos + (nPixels / nThreads) * thread_id + nPixels % nThreads;
+        int ePos = (thread_id < nPixels % nThreads) ? sPos + (nPixels / nThreads) : sPos + (nPixels / nThreads) - 1;
+
+        // Calculate the positions in terms of i and j
+        int i = (sPos / width), j = (sPos % width);
+        // Declare the variables for the optical flow
+        float fPatchDifferenceMax = INFINITY;
+        float fPatchDifferenceX = 0.0f, fPatchDifferenceY = 0.0f;
+        int searchVectorX = 0, searchVectorY = 0;
+        float fAccumDif = 0.0f;
+        int patchPixelX = 0, patchPixelY = 0;
+        int basePixelX = 0, basePixelY = 0;
+        float fPatchPixel = 0.0f, fBasePixel = 0.0f;
+
+        // Iterate over each pixel of the image
+        for (int iter = 0; sPos <= ePos; sPos++)
         {
-            // Initialize the variables
-            fPatchDifferenceMax = INFINITY;
-            fPatchDifferenceX = 0.0f;
-            fPatchDifferenceY = 0.0f;
-
-            // Search over a rectangular area for a patch of the image
-            //  Sx and Sy indicates the area of search
-            for (int sy = 0; sy < SEARCH_SIZE; sy++)
+            // Initialize the vector
+            optFlow[iter].x = 0;
+            optFlow[iter].y = 0;
+            if (motFrame[i * width + j] > 0)
             {
-                for (int sx = 0; sx < SEARCH_SIZE; sx++)
+                // Initialize the variables
+                fPatchDifferenceMax = INFINITY;
+                fPatchDifferenceX = 0.0f;
+                fPatchDifferenceY = 0.0f;
+
+                // Search over a rectangular area for a patch of the image
+                //  Sx and Sy indicates the area of search
+                for (int sy = 0; sy < SEARCH_SIZE; sy++)
                 {
-                    // vectors that iterate over the search square
-                    searchVectorX = j + (sx - SEARCH_SIZE / 2);
-                    searchVectorY = i + (sy - SEARCH_SIZE / 2);
-
-                    // Variable to store the difference of the patch
-                    fAccumDif = 0.0f;
-
-                    // Iterate over the patch with px and py
-                    for (int py = 0; py < PATCH_SIZE; py++)
+                    for (int sx = 0; sx < SEARCH_SIZE; sx++)
                     {
-                        for (int px = 0; px < PATCH_SIZE; px++)
+                        // vectors that iterate over the search square
+                        searchVectorX = j + (sx - SEARCH_SIZE / 2);
+                        searchVectorY = i + (sy - SEARCH_SIZE / 2);
+
+                        // Variable to store the difference of the patch
+                        fAccumDif = 0.0f;
+
+                        // Iterate over the patch with px and py
+                        for (int py = 0; py < PATCH_SIZE; py++)
                         {
-                            // Iterate over the patch
-                            patchPixelX = searchVectorX + (px - PATCH_SIZE / 2);
-                            patchPixelY = searchVectorY + (py - PATCH_SIZE / 2);
+                            for (int px = 0; px < PATCH_SIZE; px++)
+                            {
+                                // Iterate over the patch
+                                patchPixelX = searchVectorX + (px - PATCH_SIZE / 2);
+                                patchPixelY = searchVectorY + (py - PATCH_SIZE / 2);
 
-                            // Iterate over the patch of the original pixel
-                            basePixelX = j + (px - PATCH_SIZE / 2);
-                            basePixelY = i + (py - PATCH_SIZE / 2);
+                                // Iterate over the patch of the original pixel
+                                basePixelX = j + (px - PATCH_SIZE / 2);
+                                basePixelY = i + (py - PATCH_SIZE / 2);
 
-                            // Get adjacent values for each patch checking that is inside the image
-                            fPatchPixel = 0.0f;
-                            fBasePixel = 0.0f;
-                            if (patchPixelX >= 0 && patchPixelX < width && patchPixelY >= 0 && patchPixelY < height)
-                                fPatchPixel = lFrame2[patchPixelY * width + patchPixelX];
+                                // Get adjacent values for each patch checking that is inside the image
+                                fPatchPixel = 0.0f;
+                                fBasePixel = 0.0f;
+                                if (patchPixelX >= 0 && patchPixelX < width && patchPixelY >= 0 && patchPixelY < height)
+                                    fPatchPixel = lFrame2[patchPixelY * width + patchPixelX];
 
-                            if (basePixelX >= 0 && basePixelX < width && basePixelY >= 0 && basePixelY < height)
-                                fBasePixel = lFrame1[basePixelY * width + basePixelX];
+                                if (basePixelX >= 0 && basePixelX < width && basePixelY >= 0 && basePixelY < height)
+                                    fBasePixel = lFrame1[basePixelY * width + basePixelX];
 
-                            // Accumulate difference
-                            fAccumDif += fabs(fPatchPixel - fBasePixel);
+                                // Accumulate difference
+                                fAccumDif += fabs(fPatchPixel - fBasePixel);
+                            }
                         }
-                    }
 
-                    // Record the vector offset for the least different search patch
-                    if (fAccumDif <= fPatchDifferenceMax)
-                    {
-                        fPatchDifferenceMax = fAccumDif;
-                        optFlow[iter].x = searchVectorX - j;
-                        optFlow[iter].y = searchVectorY - i;
+                        // Record the vector offset for the least different search patch
+                        if (fAccumDif <= fPatchDifferenceMax)
+                        {
+                            fPatchDifferenceMax = fAccumDif;
+                            optFlow[iter].x = searchVectorX - j;
+                            optFlow[iter].y = searchVectorY - i;
+                        }
                     }
                 }
             }
-        }
-        j += 1;
-        iter += 1;
-        if (j == width)
-        {
-            i += 1;
-            j = 0;
+            j += 1;
+            iter += 1;
+            if (j == width)
+            {
+                i += 1;
+                j = 0;
+            }
         }
     }
 }
@@ -380,7 +399,7 @@ void interpolateFrames(uchar *frame1, uchar *frame2, uchar *resFrame, OpticalVec
     free(joinFrame);
 }
 
-void printProgressBar(int iterFrame, int frameCount, double clusterTime, double totalTime, int nProcess)
+void printProgressBar(int iterFrame, int frameCount, double clusterTime, double totalTime, int nProcess, int nThreads)
 {
     float progrss_100 = (int)((float)iterFrame / (float)frameCount * 100);
     float progress_20 = (int)((float)iterFrame / (float)frameCount * 20);
@@ -401,11 +420,11 @@ void printProgressBar(int iterFrame, int frameCount, double clusterTime, double 
               << "ET: ";
 
     printf("%f s     ", totalTime);
-    printf("    ET/F: %f s       NProcess:  %d   \n \n", clusterTime, nProcess);
+    printf("    ET/F: %f s      NProcess:  %d       NThreads:  %d    \n \n", clusterTime, nProcess, nThreads);
 }
 
 // Function to the write the inform
-void writeInform(char *path, int width, int height, int iterFrame, int frameCount, double clusterTime, double totalTime, int nProcess)
+void writeInform(char *path, int width, int height, int iterFrame, int frameCount, double clusterTime, double totalTime, int nProcess, int nThreads)
 {
     // Declare the FILE to write the times
     FILE *fp;
@@ -418,7 +437,7 @@ void writeInform(char *path, int width, int height, int iterFrame, int frameCoun
         printf("Error opening the file \n");
         exit(1);
     }
-    fprintf(fp, "%d,%d,%d,%d,%f,%f\n", iterFrame, width, height, nProcess, framesPSec, clusterTime);
+    fprintf(fp, "%d,%d,%d,%d,%d,%f,%f\n", iterFrame, width, height, nProcess, nThreads, framesPSec, clusterTime);
     fclose(fp);
 }
 
@@ -454,7 +473,7 @@ void exportFrames(char *path, int iterFrame, Mat frame, Mat genFrame, OpticalVec
     }
 }
 
-void interpolateVideo(char *path, char *loadName, char *saveName, int framesRend, bool expFrames)
+void interpolateVideo(char *path, char *loadName, char *saveName, int framesRend, bool expFrames, int nThreads)
 {
     // Declare the variables for time measurement
     double totalTime = 0.0, clusterTime = 0.0, processTime = 0.0, timeStart = 0.0, timeEnd = 0.0;
@@ -500,9 +519,11 @@ void interpolateVideo(char *path, char *loadName, char *saveName, int framesRend
         std::cout << "------------------------------------------------------------------------" << std::endl;
 
         std::cout << "Video resolution: " << width << "px * " << height << "px" << std::endl;
+        std::cout << "Path: " << path << std::endl;
         std::cout << "FPS: " << fps << std::endl;
         std::cout << "Total frames: " << frameCount << std::endl;
         std::cout << "Number of Process: " << nProcess << std::endl;
+        std::cout << "Number of Threads: " << nThreads << std::endl;
 
         std::cout << "------------------------------------------------------------------------" << std::endl;
     }
@@ -635,7 +656,7 @@ void interpolateVideo(char *path, char *loadName, char *saveName, int framesRend
                 timeStart = MPI_Wtime();
 
                 // Calculate the optical flow
-                getOpticalFlow(lFrame1, lFrame2, motFrame, optFlow, width, height, channels, startPos, endPos);
+                getOpticalFlow(lFrame1, lFrame2, motFrame, optFlow, width, height, channels, startPos, endPos, nThreads);
 
                 // Measure end time
                 timeEnd = MPI_Wtime();
@@ -690,10 +711,10 @@ void interpolateVideo(char *path, char *loadName, char *saveName, int framesRend
                     saveVideo.write(newFrame);
 
                     // Show the progress bar
-                    printProgressBar(iterFrame, frameCount, clusterTime, totalTime, nProcess);
+                    printProgressBar(iterFrame, frameCount, clusterTime, totalTime, nProcess, nThreads);
 
                     // Write the files with the times
-                    writeInform(path, width, height, iterFrame, frameCount, clusterTime, totalTime, nProcess);
+                    writeInform(path, width, height, iterFrame, frameCount, clusterTime, totalTime, nProcess, nThreads);
 
                     // Export the frames if is required
                     if (expFrames)
@@ -734,7 +755,9 @@ void interpolateVideo(char *path, char *loadName, char *saveName, int framesRend
         }
         printf("------------------------------------------------------------------------------\n");
         printf("Runtime: %f s \n", totalTime);
-        fprintf(fp, "%d,%d,%d,%d,%f\n", width, height, nProcess, iterFrame - 1, totalTime);
+        fprintf(fp, "%d,%d,%d,%d,%d,%f\n", width, height, nProcess, nThreads, iterFrame - 1, totalTime);
+        printf("------------------------------------------------------------------------------\n \n \n");
+
 
         fclose(fp);
     }

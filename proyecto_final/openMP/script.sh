@@ -23,9 +23,9 @@ if [ $? -eq 0 ]; then
   echo "Ejecutando el programa ..."
   for test in {1,4}
   do
-    for (( i=1; i<=(16); i=i*2 ))
+    for (( i=1; i<=(32); i=i*2 ))
     do
-      ./MotionInterpolation src/video/test"$test"/ test.mp4 result.avi 80 0 $i
+      ./MotionInterpolation src/video/test"$test"/ test.mp4 result.avi 25 0 $i
     done
   done
 fi

@@ -1,0 +1,300 @@
+----------------------------------------------------------------------------------------------------------------
+                                Configuración de cluster MPI en Google Cloud
+----------------------------------------------------------------------------------------------------------------
+Juan Sebastián Rodríguez Castellanos                      -                     Universidad Nacional de Colombia
+Sistemas distribuidos
+----------------------------------------------------------------------------------------------------------------
+
+******************************************       CREACIÓN Y CONFIGURACIÓN DEL NODO MASTER            ****************************************** 
+
+1. Crear una instancia en Google Computer Engine, el nombre de esta instancia es "master" y la distribución de linux recomendada es Ubuntu 20.04
+2. Une vez creada la instancia, es necesario realizar la conexión SSH y ejecutar los siguientes comandos
+
+    ** Instalación de openmpi y de las librerías para exportar el directorio **
+
+    sudo apt-get update
+    sudo apt-get install openmpi-bin openmpi-common libopenmpi-dev
+    sudo apt-get install nfs-kernel-server
+    sudo apt-get install nfs-common
+
+    ** Crear un usuario llamado mpiuser, el cual se va a exportar a los demás nodos **
+
+    # La contraseña y el uid pueden ser cambiados
+    sudo adduser mpiuser --uid 777
+    "password: mpi"
+
+    ** Añadir el directorio al archivo exports **
+
+    echo "/home/mpiuser *(rw,sync,no_subtree_check)" | sudo tee -a /etc/exports
+
+    ** Exportar el directorio anteriormente creado **
+
+    sudo service nfs-kernel-server restart
+    sudo exportfs -a
+
+3. El siguiente paso es crear la llave SSH el cual le dará acceso al nodo "master" a los demas nodos. Para esto se ejecutan los siguientes comandos:
+
+    ** Este comando NO se debe ejecutar como root y se recomienda dejar los valores por defecto **
+    
+    ssh-keygen
+
+    ** Es necesario copiar la llave creada y añadirla a la configuración del cluster, para esto: **
+
+    cat ~/.ssh/id_rsa.pub
+
+    ** Copiar el keygen obtenido el cual debe ser similar al siguiente: **
+
+    "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQDjvxgMbrQ4XAlgRfj02JZD9/cm12OLvwd3EAskhPLQG38GcqBXGde9zaoKdxEpDmdYC/OyRjSqdb7t1krP2pKgZ78Li2xCiMtGyaeKX ..."
+
+    ** Para añadir el keygen, es necesario ir al menu de COMPUTER ENGINE / SETTINGS / METADATA / SSH KEYS **
+    ** Dar en la opción de EDITAR y añadir la llave SSH, esto permitirá que el nodo "master" se conecte a los demás nodos. **
+
+
+******************************************       CREACIÓN Y CONFIGURACIÓN DE LOS DEMÁS NODOS            ****************************************** 
+
+            "Los siguientes pasos se deben realizar sobre la cantidad N de nodos a crear."
+
+1. Crear una instancia en Google Computer Engine, el nombre de esta instancia es "cluster-node1" y la distribución de linux recomendada es Ubuntu 20.04
+2. Une vez creada la instancia, es necesario realizar la conexión SSH y ejecutar los siguientes comandos:
+
+    ** Instalación de openmpi **
+
+    sudo apt-get update
+    sudo apt-get install nfs-common
+    sudo apt-get install openmpi-bin openmpi-common libopenmpi-dev
+    
+    ** Crear un usuario llamado mpiuser, el cual sirve para la conexión al nodo "master" **
+    
+    # Se recomienda que ña contraseña y el uid sean iguales al del master para evitar fallos
+    sudo adduser mpiuser --uid 777
+    password: mpi
+
+    ** Realizar la conexión al directorio del nodo master **
+
+    sudo mount -t nfs master:/home/mpiuser /home/mpiuser/
+
+
+******************************************       PROBAR EL FUNCIONAMIENTO DEL DIRECTORIO COMPARTIDO       ****************************************** 
+
+1. Para esto vamos a crear un archivo de prueba desde el nodo "master" y verificar su existencia en los demás nodos
+
+    ** Ir al directorio de inicio **
+    
+    cd
+
+    ** Ir al directorio anterior y verificar los usuarios existentes: **
+
+    cd ..
+    ls
+
+    ** Los directorios mostrados deben ser similares a los siguientes: **
+    
+    " myuser mpiuser  ubuntu"
+
+    ** Ir al directorio "mpiuser" y crear el archivo de prueba **
+
+    cd mpiuser
+
+    # Para la ejecución de comandos dentro del directorio "mpiuser" se recomienda realizarlos como root
+    sudo nano test.txt
+
+    ** Añadir un texto de prueba **
+
+    ´ This is just a test´
+
+    ** Guardar y salir **
+
+2. Desde los otros nodos se va a probar la existencia del archivo, para esto: 
+
+    ** Ir al directorio de inicio **
+
+    cd
+
+    ** Ir al directorio anterior y verificar los usuarios existentes: **
+
+    cd ..
+    ls
+
+    ** Los directorios mostrados deben ser similares a los siguientes: **
+    
+    " myuser mpiuser  ubuntu"
+
+    ** Ir al directorio "mpiuser" y verificar los archivos existentes **
+    
+    cd mpiuser
+    ls
+
+    ** El resultado obtenido debe ser similar al siguiente: **
+    
+    " test.txt "
+
+    ** Abrir el archivo y verificar el contenido **
+
+    cat test.txt
+
+    ** Si el proceso fue realizado correctamente, el contenido debe ser el añadido anteriormente **
+
+******************************************( OPCIONAL - RECOMENDADO ) AUTOMATIZAR LA CONEXIÓN AL NODO PADRE****************************************** 
+
+1. Cada vez que cualquier nodo diferente al padre se reinicie, será necesario realizar la reconexión al padre, lo cual puede llegar a ser tedioso, para evitar esto:
+
+    ** Crear archivo bash para la ejecución automática **
+
+    #Este archivo se va a crear en el directorio root para mayor facilidad
+    sudo nano /root/mount.sh
+    
+    ** Pagar el siguiente texto dentro del archivo creado **
+
+    #Este se va a encargar de ejecutar el comando de conexión
+
+    #################################################
+
+    #!/bin/sh
+    mount -t nfs master:/home/mpiuser /home/mpiuser/
+
+    #################################################
+    
+    ** Configurar el archivo para que se ejecute al iniciar el sistema **
+
+    sudo chmod +x /root/mount.sh
+
+    # Al ejecutar el siguiente comando presionar 1 para ejecutar con nano
+    sudo crontab -e
+
+    ** Al final del documento añadir la siguiente linea: **
+
+    #################################################
+
+    @reboot sh /root/mount.sh
+
+    #################################################
+
+2. Para probar que el proceso fue realizado correctamente se recomienda reiniciar el nodo y realizar los pasos para PROBAR EL DIRECTORIO COMPARTIDO
+
+******************************************       REALIZAR LA CONEXIÓN SSH DESDE EL NODO MASTER          ****************************************** 
+
+1. Desde el nodo master se debe realizar una conexión SSH para añadir el nodo a las conexiones existentes:
+
+    ** Probar la conexión SSH **
+    
+    ssh cluster-node1
+
+    # Si la conexión fue realizada correctamente en el bash se debe ver la linea de comandos de la siguiente manera:
+
+    "
+    myuser@cluster-node1~$ 
+    "
+
+    ** Cerrar la conexión **
+
+    exit
+
+******************************************           CREAR EL PROYECYO DE PRUEBA MPI EN MASTER          ****************************************** 
+
+1. Crear el archivo mpi_host el cual va a definir las configuraciones del proyecto, para esto:
+
+    ** Ir al directorio de mpiuser **
+    
+    cd
+    cd ..
+    cd mpiuser
+
+    ** Crear el archivo mpi_hosts **
+
+    sudo nano /home/mpiuser/mpi_hosts
+
+    ** Añadir el siguiente texto en el archivo **
+    - NOTA: Evitar tabulados. Recomendación: Añadir un salto de línea después de la última linea del archivo
+    #################################################
+    # The Hostfile for Open MPI
+
+    # The master node, 'slots=2'
+    localhost slots=2
+
+    # The following slave nodes, 'slots=2' also
+    cluster-node1 slots=2
+    #cluster-node2 slots=2
+
+    #################################################
+
+    - NOTA: La configuración de cada nodo es: -
+        "nombre_nodo slots=N"
+    - nombre_nodo: Localhost representa al nodo master, N es el número de procesos que se pueden ejecutar por Nodo
+    
+    ** Guardar y salir del archivo **
+
+2. Crear el archivo de prueba de mpi
+
+    ** Dentro del directorio mpiuser crear el archivo "mpi_test.c" **
+
+    sudo nano mpi_test.c
+
+    ** Añadir el siguiente código al archivo: **
+    - NOTA: No olvidar los #include ni el #define
+    
+    ///////////////////////////////////////////////////////////////////
+
+    #include <stdio.h>
+    #include <string.h>
+    #include <mpi.h>
+
+    #define MSG_LENGTH 15
+
+    int main (int argc, char *argv[])
+    {
+        int i, tag=1, tasks, iam;
+        char message[MSG_LENGTH];
+        MPI_Status status;
+
+        /* Initialize the message passing system, get the number of nodes,
+            and find out which node we are. */
+
+        MPI_Init(&argc, &argv);
+        MPI_Comm_size(MPI_COMM_WORLD, &tasks);
+        MPI_Comm_rank(MPI_COMM_WORLD, &iam);
+        if (iam == 0) {
+
+                /* Root node sends message to everyone. */
+
+                strcpy(message, "Hello, world!");
+                for (i=1; i<tasks; i++)
+                MPI_Send(message, MSG_LENGTH, MPI_CHAR, i, tag,
+                                MPI_COMM_WORLD);
+        } else {
+
+                /* Receive message from root. */
+
+                MPI_Recv(message, MSG_LENGTH, MPI_CHAR, 0, tag,
+                        MPI_COMM_WORLD, &status);
+        }
+        printf("node %d: %s\n", iam, message);
+
+        /* Shut down the message passing system. */
+
+        MPI_Finalize();
+        return 0;
+
+    }
+
+    ///////////////////////////////////////////////////////////////////
+
+
+    ** Compilar el programa de prueba **
+
+    sudo mpicc -o mpi_test mpi_test.c
+
+    ** Ejecutar el programa **
+
+    mpirun -np 4 --hostfile mpi_hosts ./mpi_test
+
+    - NOTA: El valor 4 representa el número de procesos, por lo cuál se puede cambiar siempre y cuando sea menor o igual al total del archivo mpi_hosts
+
+    ** El resultado obtenido debe ser similar al siguiente: **
+
+    "
+        node 1: Hello, world!
+        node 2: Hello, world!
+        node 0: Hello, world!
+        node 3: Hello, world!
+    "
+

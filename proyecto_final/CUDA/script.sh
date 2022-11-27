@@ -43,17 +43,20 @@ else
       echo ""
 
       echo "Ejecutando el programa ..."
-      for test in {1,2,3,4}
+      for test in {1,4}
       do
         for (( i=1; i<=((2*$mp)); i=i*2 ))
         do
-          ./MotionInterpolation src/video/test"$test"/ test.mp4 result.avi 80 0 $i $cores
-          if [ $? -eq 0 ]; then
-            echo "✓ Interpolación de video realizada correctamente"
-          else
-              echo "Error en la ejecución del programa :("
-              exit 1
-          fi
+          for (( j=4; j<=((2*$cores)); j=j*2 ))
+          do
+            ./MotionInterpolation src/video/test"$test"/ test.mp4 result.avi 25 0 $i $j
+            if [ $? -eq 0 ]; then
+              echo "✓ Interpolación de video realizada correctamente"
+            else
+                echo "Error en la ejecución del programa :("
+                exit 1
+            fi
+          done
         done
       done
     else

@@ -56,13 +56,13 @@ float *getLuminance(uchar *, int, int, int = 3);
 float *getMotionImage(float *, float *, int, int);
 
 // Prototype for the optical flow
-void getOpticalFlow(uchar *, uchar *, OpticalVector *, int, int, int = 3, int = 0);
+timeval getOpticalFlow(uchar *, uchar *, OpticalVector *, int, int, int = 3, int = 0);
 
 // Prototype for the blur effect
 void blurFrame(uchar *, uchar *, OpticalVector *, int, int, int = 3, int = 0);
 
 // Prototype for the interpolation of frame
-void interpolateFrames(uchar *, uchar *, uchar *, OpticalVector *, int, int, int, int = 0);
+timeval interpolateFrames(uchar *, uchar *, uchar *, OpticalVector *, int, int, int, int = 0);
 
 // Prototype for the print the progress
 void printProgressBar(int, int, timeval, timeval, int, int);
@@ -165,41 +165,8 @@ __global__ void getOpticalFlowCUDA(float *lFrame1, float *lFrame2, float *motFra
     }
 }
 
-__global__ void sharedGetOpticalFlowCUDA(int a)
-{
-    //extern __shared__ int lFr1[];
-    //int thread_id = threadIdx.x + blockIdx.x * blockDim.x;
-
-    // s[64] = 20;
-    // printf("Size of: %d \n", sizeof(s[0]));
-    __syncthreads();
-    /*
-    printf(" BlockId X: %d \n BlockId Y: %d \n Thread X: %d \n Thread Y: %d \n BlockDim X: %d \n BlockDim Y: %d \n ------------------ \n",
-           blockIdx.x, blockIdx.y, threadIdx.x, threadIdx.y, blockDim.x, blockDim.y);
-    */
-}
-
 int main(int argc, char **argv)
 {
-    /*
-    cudaError_t err = cudaSuccess;
-    printf("Hola mundo CPU \n");
-    printf("-------------- \n");
-
-    // Test Kernel TIling
-    testkernel<<<10, 10, 1920*1080>>>(4);
-
-    cudaDeviceSynchronize();
-
-    err = cudaGetLastError();
-
-    if (err != cudaSuccess)
-    {
-        fprintf(stderr, "Failed to launch getOpticalFlow kernel (error code %s)!\n", cudaGetErrorString(err));
-        exit(EXIT_FAILURE);
-    }
-    */
-    
     // Declare the variables for time measurement
     struct timeval runtime = (struct timeval){0};
     // Declare the strings of load and save video
@@ -230,7 +197,6 @@ int main(int argc, char **argv)
     nBlocks = atoi(argv[6]);
     nThreads = atoi(argv[7]);
 
-
     // Load the video from the path
     loadVideo = VideoCapture(std::string(path) + loadName);
 
@@ -258,8 +224,6 @@ int main(int argc, char **argv)
 
     fclose(fp);
     destroyAllWindows();
-
-    
 
     return 0;
 }
@@ -359,7 +323,7 @@ float *getLuminance(uchar *frame, int width, int height, int channels)
 }
 
 // Function to get the optical flow
-void getOpticalFlow(uchar *frame1, uchar *frame2, OpticalVector *optFlow, int width, int height, int channels, int nBlocks, int nThreads)
+timeval getOpticalFlow(uchar *frame1, uchar *frame2, OpticalVector *optFlow, int width, int height, int channels, int nBlocks, int nThreads)
 {
     static int size = width * height;
     cudaError_t err = cudaSuccess;
@@ -442,8 +406,8 @@ void getOpticalFlow(uchar *frame1, uchar *frame2, OpticalVector *optFlow, int wi
         exit(EXIT_FAILURE);
     }
 
-    /*Variables necesarias para medir tiempos*/
-    struct timeval tval_before, tval_after, tval_result;
+    // Declare the variables to measure time
+    struct timeval tval_before = (struct timeval){0}, tval_after = (struct timeval){0}, tval_result = (struct timeval){0};
 
     /*Medición de tiempo de inicio*/
     gettimeofday(&tval_before, NULL);
@@ -466,7 +430,7 @@ void getOpticalFlow(uchar *frame1, uchar *frame2, OpticalVector *optFlow, int wi
     /*Calcular los tiempos en tval_result*/
     timersub(&tval_after, &tval_before, &tval_result);
 
-    //printf("Tiempo de ejecución: %ld.%06ld s \n", (long int)tval_result.tv_sec, (long int)tval_result.tv_usec);
+    // printf("Tiempo de ejecución: %ld.%06ld s \n", (long int)tval_result.tv_sec, (long int)tval_result.tv_usec);
 
     // Copy optFlow back to Host
     err = cudaMemcpy(optFlow, d_optFlow, size * sizeof(struct OpticalVector), cudaMemcpyDeviceToHost);
@@ -508,6 +472,8 @@ void getOpticalFlow(uchar *frame1, uchar *frame2, OpticalVector *optFlow, int wi
     free(lFrame1);
     free(lFrame2);
     free(motFrame);
+
+    return tval_result;
 }
 
 void blurFrame(uchar *frame, uchar *resFrame, OpticalVector *opticalFlow, int width, int height, int channels, int nThreads)
@@ -551,8 +517,13 @@ void blurFrame(uchar *frame, uchar *resFrame, OpticalVector *opticalFlow, int wi
     }
 }
 
-void interpolateFrames(uchar *frame1, uchar *frame2, uchar *resFrame, OpticalVector *optFlow, int width, int height, int channels, int nBlocks, int nThreads)
+timeval interpolateFrames(uchar *frame1, uchar *frame2, uchar *resFrame, OpticalVector *optFlow, int width, int height, int channels, int nBlocks, int nThreads)
 {
+    // Declare the variables to measure time
+    struct timeval tval_before = (struct timeval){0}, tval_after = (struct timeval){0}, tval_result = (struct timeval){0}, tval_optf = (struct timeval){0}, tval_total = (struct timeval){0};
+
+    // Get start time
+    gettimeofday(&tval_before, NULL);
 
     // Declare the variable for the interpolation
     int linearDiv = 2;
@@ -571,8 +542,22 @@ void interpolateFrames(uchar *frame1, uchar *frame2, uchar *resFrame, OpticalVec
     cloneFrame(frame2, interFrame2, width, height, channels);
     createFrame(joinFrame, width, height, channels);
 
+    // Get End time
+    gettimeofday(&tval_after, NULL);
+
+    // Calculate total time
+    timersub(&tval_after, &tval_before, &tval_result);
+
     // Get the Optical Flow
-    getOpticalFlow(frame1, frame2, optFlow, width, height, channels, nBlocks, nThreads);
+    tval_optf = getOpticalFlow(frame1, frame2, optFlow, width, height, channels, nBlocks, nThreads);
+
+    // Add the optflow time
+    timeradd(&tval_result, &tval_optf, &tval_total);
+
+
+
+    // Get start time
+    gettimeofday(&tval_before, NULL);
 
     // Create the new frame interpolating the optical Flow
     for (int i = 0; i < height; i++)
@@ -601,10 +586,21 @@ void interpolateFrames(uchar *frame1, uchar *frame2, uchar *resFrame, OpticalVec
     cloneFrame(joinFrame, resFrame, width, height, channels);
     blurFrame(joinFrame, resFrame, optFlow, width, height, channels, nThreads);
 
+    // Get End time
+    gettimeofday(&tval_after, NULL);
+
+    // Calculate total time
+    timersub(&tval_after, &tval_before, &tval_result);
+
+    // Add the time
+    timeradd(&tval_result, &tval_total, &tval_total);
+
     // Free the memory
     free(interFrame1);
     free(interFrame2);
     free(joinFrame);
+
+    return tval_total;
 }
 
 void printProgressBar(int iterFrame, int frameCount, timeval tval_result, timeval runtime, int nBlocks, int nThreads)
@@ -686,7 +682,7 @@ void exportFrames(char *path, int iterFrame, Mat frame, Mat genFrame, OpticalVec
 timeval interpolateVideo(VideoCapture loadVideo, char *path, char *saveName, int framesRend, bool expFrames, int nBlocks, int nThreads)
 {
     // Declare the variables for time measurement
-    struct timeval tval_before, tval_after, tval_result, runtime = (struct timeval){0};
+    struct timeval tval_result = (struct timeval){0}, runtime = (struct timeval){0};
 
     // Declare the variables for the frames
     Mat oldFrame, newFrame, saveFrame;
@@ -742,19 +738,13 @@ timeval interpolateVideo(VideoCapture loadVideo, char *path, char *saveName, int
 
             // Interpolate the frames
 
-            // Get start time
-            gettimeofday(&tval_before, NULL);
 
-            interpolateFrames(uFrameOld, uFrameNew, interFrame, optFlow, width, height, channels, nBlocks, nThreads);
+            tval_result = interpolateFrames(uFrameOld, uFrameNew, interFrame, optFlow, width, height, channels, nBlocks, nThreads);
 
-            // Get end time
-            gettimeofday(&tval_after, NULL);
 
             // Convert the uchar matrix to Mat
             ucharToMat(interFrame, saveFrame, width, height, channels);
 
-            // Save results
-            timersub(&tval_after, &tval_before, &tval_result);
 
             // Update runtime
             timeradd(&runtime, &tval_result, &runtime);
@@ -791,4 +781,3 @@ timeval interpolateVideo(VideoCapture loadVideo, char *path, char *saveName, int
     saveVideo.release();
     return runtime;
 }
-

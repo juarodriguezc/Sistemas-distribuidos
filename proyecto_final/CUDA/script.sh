@@ -43,6 +43,7 @@ else
       echo ""
 
       echo "Ejecutando el programa ..."
+
       for test in {1,4}
       do
         for (( i=1; i<=((2*$mp)); i=i*2 ))
